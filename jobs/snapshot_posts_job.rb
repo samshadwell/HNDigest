@@ -12,7 +12,8 @@ class SnapshotPostsJob
   private_constant :LOOKBACK
 
   def run(time:)
-    posts = PostFetcher.fetch(top_k: TOP_K_VALUES.max,
+    # 2x top K in case all the top k were sent yesterday.
+    posts = PostFetcher.fetch(top_k: 2 * TOP_K_VALUES.max,
                               points: POINT_THRESHOLD_VALUES.min,
                               since: time - LOOKBACK)
 
