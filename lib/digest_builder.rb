@@ -32,10 +32,10 @@ class DigestBuilder
   def remove_sent_posts(all_posts:, yesterday_digest:)
     return all_posts if yesterday_digest.nil?
 
-    yesterday_posts = yesterday_digest[:posts]
+    yesterday_posts = yesterday_digest['posts']
     return all_posts if yesterday_posts.nil?
 
-    sent_post_ids = yesterday_posts.map { |post| post[:objectID] }.to_set
-    all_posts.reject { |post| sent_post_ids.include?(post[:objectID]) }
+    sent_post_ids = yesterday_posts.map { |post| post['objectID'] }.to_set
+    all_posts.reject { |post| sent_post_ids.include?(post['objectID']) }
   end
 end
