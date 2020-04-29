@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class DigestBuilder
   A_DAY = 24 * 60 * 60 # Seconds in a day.
   private_constant :A_DAY
@@ -12,12 +14,12 @@ class DigestBuilder
 
     yesterday_digest = @storage.fetch_digest(
       type: digest_strategy.type,
-      date: date - A_DAY,
+      date: date - A_DAY
     )
 
     unsent_posts = remove_sent_posts(
       all_posts: posts,
-      yesterday_digest: yesterday_digest,
+      yesterday_digest: yesterday_digest
     )
 
     selected_posts = digest_strategy.select(unsent_posts)
@@ -25,7 +27,7 @@ class DigestBuilder
     @storage.save_digest(
       type: digest_strategy.type,
       date: date,
-      posts: selected_posts,
+      posts: selected_posts
     )
   end
 

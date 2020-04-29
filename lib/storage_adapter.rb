@@ -9,8 +9,8 @@ class StorageAdapter
   SNAPSHOT_PARTITION_KEY = 'POSTS_SNAPSHOT'
   private_constant :SNAPSHOT_PARTITION_KEY
 
-  SNAPSHOT_TTL = 30 * 24 * 60 * 60 # Seconds in 30 days.
-  private_constant :SNAPSHOT_TTL
+  MODEL_TTL = 30 * 24 * 60 * 60 # Seconds in 30 days.
+  private_constant :MODEL_TTL
 
   DIGEST_PARTITION_KEY_PREFIX = 'DIGEST'
   private_constant :DIGEST_PARTITION_KEY_PREFIX
@@ -25,7 +25,7 @@ class StorageAdapter
       PK: SNAPSHOT_PARTITION_KEY,
       SK: datestamp,
       posts: posts,
-      expires_at: date.to_i + SNAPSHOT_TTL
+      expires_at: date.to_i + MODEL_TTL
     }
 
     @dynamodb.put_item(table_name: TABLE, item: item)
@@ -35,7 +35,7 @@ class StorageAdapter
     datestamp = datestamp(date)
     item = fetch_item(
       partition_key: SNAPSHOT_PARTITION_KEY,
-      sort_key: datestamp,
+      sort_key: datestamp
     )
 
     item && item['posts']
@@ -47,6 +47,7 @@ class StorageAdapter
       PK: digest_partition_key(type),
       SK: datestamp,
       posts: posts,
+      expires_at: date.to_i + MODEL_TTL
     }
 
     @dynamodb.put_item(table_name: TABLE, item: item)
@@ -56,7 +57,7 @@ class StorageAdapter
     datestamp = datestamp(date)
     fetch_item(
       partition_key: digest_partition_key(type),
-      sort_key: datestamp,
+      sort_key: datestamp
     )
   end
 
@@ -68,12 +69,12 @@ class StorageAdapter
 
   def fetch_item(partition_key:, sort_key:)
     @dynamodb.get_item({
-      key: {
-        PK: partition_key,
-        SK: sort_key,
-      },
-      table_name: TABLE,
-    })&.item
+                         key: {
+                           PK: partition_key,
+                           SK: sort_key
+                         },
+                         table_name: TABLE
+                       })&.item
   end
 
   def digest_partition_key(type)

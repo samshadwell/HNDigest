@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Strategies
   class TopNPosts
     def initialize(num_posts)
