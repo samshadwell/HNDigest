@@ -21,8 +21,9 @@ def handle(*)
   snapshotter = PostSnapshotter.new(storage_adapter: storage_adapter)
   snapshotter.snapshot(date: date)
 
-  top_10_strategy = Strategies::TopNPosts.new(10)
   digest_builder = DigestBuilder.new(storage_adapter: storage_adapter)
+
+  top_10_strategy = Strategies::TopNPosts.new(10)
   digest_builder.build_digest(digest_strategy: top_10_strategy, date: date)
 
   over_250_strategy = Strategies::OverPointThreshold.new(250)
