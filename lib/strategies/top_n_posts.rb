@@ -11,8 +11,7 @@ module Strategies
     end
 
     def select(all_posts)
-      sorted = all_posts.sort_by { |post| post['points'] }.reverse
-      sorted.first(@n)
+      all_posts.first(@n)
     end
   end
 end

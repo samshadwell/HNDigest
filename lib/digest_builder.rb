@@ -20,7 +20,7 @@ class DigestBuilder
     unsent_posts = remove_sent_posts(
       all_posts: posts,
       yesterday_digest: yesterday_digest
-    )
+    ).sort_by { |post| post['points'] }.reverse
 
     selected_posts = digest_strategy.select(unsent_posts)
 
