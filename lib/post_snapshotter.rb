@@ -12,8 +12,8 @@ class PostSnapshotter
   end
 
   def snapshot(date:)
-    # 2x top K in case all the top k were sent yesterday.
-    posts = PostFetcher.fetch(top_k: 2 * Configuration::TOP_K_VALUES.max,
+    # 2x top n in case all the top n were sent yesterday.
+    posts = PostFetcher.fetch(top_k: 2 * Configuration::TOP_N_VALUES.max,
                               points: Configuration::POINT_THRESHOLD_VALUES.min,
                               since: date - LOOKBACK)
 
