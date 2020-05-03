@@ -3,17 +3,24 @@
 require 'sendgrid-ruby'
 
 class DigestMailer
-  def self.test
-    from = SendGrid::Email.new(email: 'hndigest@samshadwell.com')
-    to = SendGrid::Email.new(email: 'smshdwll@gmail.com')
-    subject = 'Sending with SendGrid is Fun'
-    content = SendGrid::Content.new(type: 'text/plain', value: 'and easy to do anywhere, even with Ruby')
-    mail = SendGrid::Mail.new(from, subject, to, content)
+  FROM = SendGrid::Email.new(email: 'hndigest@samshadwell.com')
+  private_constant :FROM
 
-    sg = SendGrid::API.new(api_key: ENV['SENDGRID_API_KEY'])
-    response = sg.client.mail._('send').post(request_body: mail.to_json)
-    puts response.status_code
-    puts response.body
-    puts response.headers
+  def initialize(api_key:)
+    @sendgrid_client = SendGrid::API.new(api_key: api_key).client
+  end
+
+  def send_mail(renderer:, recipients:)
+    recipients.each do |recipient|
+      to = SendGrid::Email.new(email: recipient)
+      subject = renderer.subject
+      content = SendGrid::Content.new(
+        type: 'text/html',
+        value: renderer.content
+      )
+      mail = SendGrid::Mail.new(FROM, subject, to, content)
+
+      @sendgrid_client.mail._('send').post(request_body: mail.to_json)
+    end
   end
 end
