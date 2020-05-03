@@ -65,10 +65,12 @@ class StorageAdapter
   end
 
   def fetch_subscribers(type:)
-    fetch_item(
+    item = fetch_item(
       partition_key: SUBSCRIBERS_PARTITION_KEY,
       sort_key: type
     )
+
+    item && item['emails']
   end
 
   private
@@ -85,7 +87,8 @@ class StorageAdapter
           SK: sort_key
         },
         table_name: TABLE
-      })&.item
+      }
+    )&.item
   end
 
   def digest_partition_key(type)

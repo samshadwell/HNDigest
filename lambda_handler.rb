@@ -35,10 +35,9 @@ def handle(*)
     )
     renderer = DigestRenderer.new(posts: posts, date: date)
 
-    subscribers = storage_adapter.fetch_subscribers(type: strategy.type) || {}
-    recipients = subscribers['emails'] || []
-    next if recipients.empty?
+    subscribers = storage_adapter.fetch_subscribers(type: strategy.type)
+    next if subscribers.nil? || subscribers.empty?
 
-    mailer.send_mail(renderer: renderer, recipients: recipients)
+    mailer.send_mail(renderer: renderer, recipients: subscribers)
   end
 end
