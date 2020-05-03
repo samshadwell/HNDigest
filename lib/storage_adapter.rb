@@ -15,6 +15,9 @@ class StorageAdapter
   DIGEST_PARTITION_KEY_PREFIX = 'DIGEST'
   private_constant :DIGEST_PARTITION_KEY_PREFIX
 
+  SUBSCRIBERS_PARTITION_KEY = 'SUBSCRIBERS'
+  private_constant :SUBSCRIBERS_PARTITION_KEY
+
   def initialize
     @dynamodb = Aws::DynamoDB::Client.new
   end
@@ -58,6 +61,13 @@ class StorageAdapter
     fetch_item(
       partition_key: digest_partition_key(type),
       sort_key: datestamp
+    )
+  end
+
+  def fetch_subscribers(type:)
+    fetch_item(
+      partition_key: SUBSCRIBERS_PARTITION_KEY,
+      sort_key: type
     )
   end
 

@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 require_relative 'lib/digest_builder'
+require_relative 'lib/digest_mailer'
+require_relative 'lib/digest_renderer'
 require_relative 'lib/post_snapshotter'
 require_relative 'lib/storage_adapter'
+require_relative 'lib/strategy_factory'
 require_relative 'lib/strategies/over_point_threshold'
 require_relative 'lib/strategies/top_n_posts'
 
@@ -22,10 +25,16 @@ def handle(*)
   snapshotter.snapshot(date: date)
 
   digest_builder = DigestBuilder.new(storage_adapter: storage_adapter)
+  mailer = DigestMailer.new(api_key: ENV['SENDGRID_API_KEY'])
 
-  top_10_strategy = Strategies::TopNPosts.new(10)
-  digest_builder.build_digest(digest_strategy: top_10_strategy, date: date)
+  StrategyFactory.all_strategies.each do |strategy|
+    posts = digest_builder.build_digest(digest_strategy: strategy, date: date)
+    renderer = DigestRenderer.new(posts: posts, date: date)
 
-  over_250_strategy = Strategies::OverPointThreshold.new(250)
-  digest_builder.build_digest(digest_strategy: over_250_strategy, date: date)
+    subscribers = storage_adapter.fetch_subscribers(type: strategy.type) || {}
+    recipients = subscribers['emails'] || []
+    next if recipients.empty?
+
+    mailer.send_mail(renderer: renderer, recipients: recipients)
+  end
 end

@@ -29,6 +29,8 @@ class DigestBuilder
       date: date,
       posts: selected_posts
     )
+
+    selected_posts
   end
 
   def remove_sent_posts(all_posts:, yesterday_digest:)

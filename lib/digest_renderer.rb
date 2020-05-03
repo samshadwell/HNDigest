@@ -7,7 +7,7 @@ class DigestRenderer
     Your daily Hackernews digest:
     <br>
     <br>
-    <% for @post in @digest['posts'] %>
+    <% for @post in @posts %>
       <p>
         <%= @post['title'] %>
         <br>
@@ -27,9 +27,9 @@ class DigestRenderer
   )
   private_constant :TEMPLATE
 
-  def initialize(digest:, date:)
+  def initialize(posts:, date:)
     @date = date
-    @digest = digest
+    @posts = posts
   end
 
   def subject
