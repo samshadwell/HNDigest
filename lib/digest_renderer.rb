@@ -4,7 +4,7 @@ require 'erb'
 
 class DigestRenderer
   TEMPLATE = %(
-    Your daily Hackernews digest:
+    Your daily Hacker News digest:
     <br>
     <br>
     <% for @post in @posts %>
@@ -23,7 +23,7 @@ class DigestRenderer
     <% end %>
     <br>
     <br>
-    Reply to unsubscribe.
+    To unsubscribe, reply to this email.
   )
   private_constant :TEMPLATE
 
@@ -33,7 +33,7 @@ class DigestRenderer
   end
 
   def subject
-    "HackerNews Digest for #{@date.getutc.strftime('%b %-d, %Y')}"
+    "Hacker News Digest for #{@date.getutc.strftime('%b %-d, %Y')}"
   end
 
   def content
