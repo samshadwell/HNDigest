@@ -78,14 +78,14 @@ class StorageAdapter
   end
 
   def fetch_item(partition_key:, sort_key:)
-    # TODO: Cache this.
-    @dynamodb.get_item({
-                         key: {
-                           PK: partition_key,
-                           SK: sort_key
-                         },
-                         table_name: TABLE
-                       })&.item
+    @dynamodb.get_item(
+      {
+        key: {
+          PK: partition_key,
+          SK: sort_key
+        },
+        table_name: TABLE
+      })&.item
   end
 
   def digest_partition_key(type)

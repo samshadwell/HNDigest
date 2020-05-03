@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative '../configuration'
 require_relative 'strategies/over_point_threshold'
 require_relative 'strategies/top_n_posts'
