@@ -68,6 +68,7 @@ class StorageAdapter
   end
 
   def fetch_item(partition_key:, sort_key:)
+    # TODO: Cache this.
     @dynamodb.get_item({
                          key: {
                            PK: partition_key,
