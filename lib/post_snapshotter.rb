@@ -18,5 +18,7 @@ class PostSnapshotter
                               since: date - LOOKBACK)
 
     @storage.snapshot_posts(posts: posts, date: date)
+
+    posts
   end
 end

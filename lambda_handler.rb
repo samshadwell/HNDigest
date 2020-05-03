@@ -22,13 +22,17 @@ def handle(*)
   )
   storage_adapter = StorageAdapter.new
   snapshotter = PostSnapshotter.new(storage_adapter: storage_adapter)
-  snapshotter.snapshot(date: date)
+  all_posts = snapshotter.snapshot(date: date)
 
   digest_builder = DigestBuilder.new(storage_adapter: storage_adapter)
   mailer = DigestMailer.new(api_key: ENV['SENDGRID_API_KEY'])
 
   StrategyFactory.all_strategies.each do |strategy|
-    posts = digest_builder.build_digest(digest_strategy: strategy, date: date)
+    posts = digest_builder.build_digest(
+      digest_strategy: strategy,
+      date: date,
+      posts: all_posts
+    )
     renderer = DigestRenderer.new(posts: posts, date: date)
 
     subscribers = storage_adapter.fetch_subscribers(type: strategy.type) || {}

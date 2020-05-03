@@ -8,10 +8,7 @@ class DigestBuilder
     @storage = storage_adapter
   end
 
-  def build_digest(digest_strategy:, date:)
-    snapshot = @storage.fetch_post_snapshot(date: date)
-    posts = snapshot.values
-
+  def build_digest(digest_strategy:, date:, posts:)
     yesterday_digest = @storage.fetch_digest(
       type: digest_strategy.type,
       date: date - A_DAY
