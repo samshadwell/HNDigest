@@ -22,7 +22,7 @@ def handle(*)
   )
   storage_adapter = StorageAdapter.new
   snapshotter = PostSnapshotter.new(storage_adapter: storage_adapter)
-  all_posts = snapshotter.snapshot(date: date)
+  all_posts = snapshotter.snapshot(date: date).values
 
   digest_builder = DigestBuilder.new(storage_adapter: storage_adapter)
   mailer = DigestMailer.new(api_key: ENV['SENDGRID_API_KEY'])
