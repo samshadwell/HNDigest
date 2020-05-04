@@ -36,12 +36,12 @@ class PostFetcher
   private_class_method :fetch_by_points
 
   def self.fetch_posts_from_path(path, client:)
-    result = JSON.parse(client.get(path).to_s, symbolize_names: true)
-    posts = result[:hits].map do |full_p|
-      full_p.slice(:created_at, :title, :url, :points, :objectID)
+    result = JSON.parse(client.get(path).to_s)
+    posts = result['hits'].map do |full_p|
+      full_p.slice('created_at', 'title', 'url', 'points', 'objectID')
     end
 
-    posts.map { |p| [p[:objectID], p] }.to_h
+    posts.map { |p| [p['objectID'], p] }.to_h
   end
   private_class_method :fetch_posts_from_path
 end
