@@ -6,11 +6,11 @@ class DigestRenderer
   TEMPLATE = %(
     Your daily Hacker News digest:
     <br>
-    <br>
     <% for @post in @posts %>
       <p>
         <%= @post['title'] %>
         <br>
+        <%= @post['points'] %> points -
         <% if @post['url'] %>
           <a href="<%= @post['url'] %>">
             link
@@ -21,7 +21,6 @@ class DigestRenderer
         </a>
       </p>
     <% end %>
-    <br>
     <br>
     To unsubscribe, reply to this email.
   )
