@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'aws-sdk-ses'
+
 require_relative 'lib/digest_builder'
 require_relative 'lib/digest_mailer'
 require_relative 'lib/digest_renderer'
@@ -25,7 +27,7 @@ def handle(*)
   all_posts = snapshotter.snapshot(date: date).values
 
   digest_builder = DigestBuilder.new(storage_adapter: storage_adapter)
-  mailer = DigestMailer.new(api_key: ENV['SENDGRID_API_KEY'])
+  mailer = DigestMailer.new(ses_client: Aws::SES::Client.new(region: 'us-west-2'))
 
   StrategyFactory.all_strategies.each do |strategy|
     posts = digest_builder.build_digest(
