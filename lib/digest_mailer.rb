@@ -1,40 +1,48 @@
 # frozen_string_literal: true
 
-require 'sendgrid-ruby'
+require 'aws-sdk-ses'
 
 class DigestMailer
-  FROM = { email: 'hndigest@samshadwell.com' }.freeze
+  SES_RECIPIENT_LIMIT = 50
+  private_constant :SES_RECIPIENT_LIMIT
+
+  FROM = 'hndigest@samshadwell.com'
   private_constant :FROM
 
-  REPLY_TO = { email: 'hi@samshadwell.com' }.freeze
+  REPLY_TO = 'hi@samshadwell.com'
   private_constant :REPLY_TO
 
-  def initialize(api_key:)
-    @sendgrid_client = SendGrid::API.new(api_key: api_key).client
+  ENCODING = 'UTF-8'
+  private_constant :ENCODING
+
+  def initialize(ses_client:)
+    @ses_client = ses_client
   end
 
   def send_mail(renderer:, recipients:)
-    personalizations = recipients.map do |r|
-      {
-        to: [{ email: r }]
-      }
-    end
-
-    mail = {
-      personalizations: personalizations,
-      from: FROM,
-      reply_to: REPLY_TO,
-      subject: renderer.subject,
-      content: [
-        {
-          type: 'text/html',
-          value: renderer.content
+    recipients.each_slice(SES_RECIPIENT_LIMIT) do |recipients_slice|
+      puts 'Sending mail via SES...'
+      response = @ses_client.send_email({
+        source: FROM,
+        destination: {
+          bcc_addresses: recipients_slice
+        },
+        reply_to_addresses: [REPLY_TO],
+        return_path: REPLY_TO,
+        message: {
+          subject: {
+            data: renderer.subject,
+            charset: ENCODING,
+          },
+          body: {
+            html: {
+              data: renderer.content,
+              charset: ENCODING,
+            }
+          }
         }
-      ]
-    }
-
-    puts 'Sending mail via Sendgrid...'
-    response = @sendgrid_client.mail._('send').post(request_body: mail.to_json)
-    puts "Sendgrid responded with status code #{response.status_code}"
+      })
+      puts "Success! message_id=#{response.message_id}"
+    end
   end
 end
