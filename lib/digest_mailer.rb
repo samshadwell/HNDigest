@@ -22,7 +22,7 @@ class DigestMailer
   def send_mail(renderer:, recipients:)
     recipients.each_slice(SES_RECIPIENT_LIMIT) do |recipients_slice|
       puts 'Sending mail via SES...'
-      response = ses_client.send_email({
+      response = @ses_client.send_email({
         source: FROM,
         destination: {
           bcc_addresses: recipients_slice
