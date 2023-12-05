@@ -1,10 +1,17 @@
-FROM lambci/lambda:build-ruby2.7
+FROM public.ecr.aws/sam/build-ruby3.2:latest-x86_64
+WORKDIR /var/task
+
+RUN gem update bundler
 
 ENV AWS_DEFAULT_REGION us-west-2
 
-COPY Gemfile Gemfile
-COPY Gemfile.lock Gemfile.lock
-RUN bundle install --deployment --without=development
+COPY Gemfile .
+COPY Gemfile.lock .
+
+RUN bundle config set --local deployment 'true'
+RUN bundle config set --local without 'development'
+RUN bundle config set --local path 'vendor/bundle'
+RUN bundle install
 
 COPY . .
 
