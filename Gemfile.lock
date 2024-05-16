@@ -54,7 +54,8 @@ GEM
     racc (1.7.1)
     rainbow (3.1.1)
     rake (13.0.6)
-    rexml (3.2.6)
+    rexml (3.2.8)
+      strscan (>= 3.0.9)
     rubocop (0.82.0)
       jaro_winkler (~> 1.5.1)
       parallel (~> 1.10)
@@ -64,6 +65,7 @@ GEM
       ruby-progressbar (~> 1.7)
       unicode-display_width (>= 1.4.0, < 2.0)
     ruby-progressbar (1.13.0)
+    strscan (3.1.0)
     unf (0.1.4)
       unf_ext
     unf_ext (0.0.8.2)
