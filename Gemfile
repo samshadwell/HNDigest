@@ -9,6 +9,6 @@ gem 'aws-sdk-ses', '~> 1.36'
 gem 'http', '~> 4.4', '>= 4.4.1'
 
 group :development do
-  gem 'pry-byebug', '~> 3.9'
-  gem 'rubocop', '~> 0.82.0', require: false
+  gem 'pry-byebug', '~> 3.10'
+  gem 'rubocop', '~> 1.65', require: false
 end

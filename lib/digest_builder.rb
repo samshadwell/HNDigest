@@ -16,14 +16,14 @@ class DigestBuilder
 
     unsent_posts = remove_sent_posts(
       all_posts: posts,
-      yesterday_digest: yesterday_digest
+      yesterday_digest:
     ).sort_by { |post| post['points'] }.reverse
 
     selected_posts = digest_strategy.select(unsent_posts)
 
     @storage.save_digest(
       type: digest_strategy.type,
-      date: date,
+      date:,
       posts: selected_posts
     )
 
@@ -36,7 +36,7 @@ class DigestBuilder
     yesterday_posts = yesterday_digest['posts']
     return all_posts if yesterday_posts.nil?
 
-    sent_post_ids = yesterday_posts.map { |post| post['objectID'] }.to_set
+    sent_post_ids = yesterday_posts.to_set { |post| post['objectID'] }
     all_posts.reject { |post| sent_post_ids.include?(post['objectID']) }
   end
 end
