@@ -23,23 +23,23 @@ def handle(*)
     SNAPSHOT_DAILY_HOUR
   )
   storage_adapter = StorageAdapter.new
-  snapshotter = PostSnapshotter.new(storage_adapter: storage_adapter)
-  all_posts = snapshotter.snapshot(date: date).values
+  snapshotter = PostSnapshotter.new(storage_adapter:)
+  all_posts = snapshotter.snapshot(date:).values
 
-  digest_builder = DigestBuilder.new(storage_adapter: storage_adapter)
+  digest_builder = DigestBuilder.new(storage_adapter:)
   mailer = DigestMailer.new(ses_client: Aws::SES::Client.new(region: 'us-west-2'))
 
   StrategyFactory.all_strategies.each do |strategy|
     posts = digest_builder.build_digest(
       digest_strategy: strategy,
-      date: date,
+      date:,
       posts: all_posts
     )
-    renderer = DigestRenderer.new(posts: posts, date: date)
+    renderer = DigestRenderer.new(posts:, date:)
 
     subscribers = storage_adapter.fetch_subscribers(type: strategy.type)
     next if subscribers.nil? || subscribers.empty?
 
-    mailer.send_mail(renderer: renderer, recipients: subscribers)
+    mailer.send_mail(renderer:, recipients: subscribers)
   end
 end

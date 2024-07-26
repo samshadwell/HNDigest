@@ -27,11 +27,11 @@ class StorageAdapter
     item = {
       PK: SNAPSHOT_PARTITION_KEY,
       SK: datestamp,
-      posts: posts,
+      posts:,
       expires_at: date.to_i + MODEL_TTL
     }
 
-    @dynamodb.put_item(table_name: TABLE, item: item)
+    @dynamodb.put_item(table_name: TABLE, item:)
   end
 
   def fetch_post_snapshot(date:)
@@ -49,11 +49,11 @@ class StorageAdapter
     item = {
       PK: digest_partition_key(type),
       SK: datestamp,
-      posts: posts,
+      posts:,
       expires_at: date.to_i + MODEL_TTL
     }
 
-    @dynamodb.put_item(table_name: TABLE, item: item)
+    @dynamodb.put_item(table_name: TABLE, item:)
   end
 
   def fetch_digest(type:, date:)

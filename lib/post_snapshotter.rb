@@ -17,7 +17,7 @@ class PostSnapshotter
                               points: Configuration::POINT_THRESHOLD_VALUES.min,
                               since: date - LOOKBACK)
 
-    @storage.snapshot_posts(posts: posts, date: date)
+    @storage.snapshot_posts(posts:, date:)
 
     posts
   end
