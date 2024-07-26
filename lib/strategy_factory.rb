@@ -6,9 +6,8 @@ require_relative 'strategies/top_n_posts'
 
 class StrategyFactory
   def self.all_strategies
-    strategies = []
-    Configuration::TOP_N_VALUES.each do |n|
-      strategies << Strategies::TopNPosts.new(n)
+    strategies = Configuration::TOP_N_VALUES.map do |n|
+      Strategies::TopNPosts.new(n)
     end
 
     Configuration::POINT_THRESHOLD_VALUES.each do |threshold|

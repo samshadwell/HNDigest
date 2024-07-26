@@ -36,7 +36,7 @@ class DigestBuilder
     yesterday_posts = yesterday_digest['posts']
     return all_posts if yesterday_posts.nil?
 
-    sent_post_ids = yesterday_posts.map { |post| post['objectID'] }.to_set
+    sent_post_ids = yesterday_posts.to_set { |post| post['objectID'] }
     all_posts.reject { |post| sent_post_ids.include?(post['objectID']) }
   end
 end

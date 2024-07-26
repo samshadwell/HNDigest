@@ -41,7 +41,7 @@ class PostFetcher
       full_p.slice('created_at', 'title', 'url', 'points', 'objectID')
     end
 
-    posts.map { |p| [p['objectID'], p] }.to_h
+    posts.to_h { |p| [p['objectID'], p] }
   end
   private_class_method :fetch_posts_from_path
 end
