@@ -1,4 +1,4 @@
-FROM public.ecr.aws/sam/build-ruby3.2:latest-x86_64
+FROM public.ecr.aws/sam/build-ruby3.3:latest-x86_64
 WORKDIR /var/task
 
 RUN gem update bundler
