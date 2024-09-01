@@ -10,5 +10,5 @@ gem 'http', '~> 5.2'
 
 group :development do
   gem 'pry-byebug', '~> 3.10'
-  gem 'rubocop', '~> 1.65', require: false
+  gem 'rubocop', '~> 1.66', require: false
 end
