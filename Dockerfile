@@ -3,7 +3,7 @@ WORKDIR /var/task
 
 RUN gem update bundler
 
-ENV AWS_DEFAULT_REGION us-west-2
+ENV AWS_DEFAULT_REGION=us-west-2
 
 COPY Gemfile .
 COPY Gemfile.lock .
@@ -17,4 +17,4 @@ COPY . .
 
 RUN zip -9yr lambda.zip .
 
-CMD aws lambda update-function-code --function-name HNDigest --zip-file fileb://lambda.zip
+CMD ["aws", "lambda", "update-function-code", "--function-name", "HNDigest", "--zip-file", "fileb://lambda.zip"]
