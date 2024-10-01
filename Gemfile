@@ -4,8 +4,8 @@ source 'https://rubygems.org'
 
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}" }
 
-gem 'aws-sdk-dynamodb', '~> 1.118'
-gem 'aws-sdk-ses', '~> 1.69'
+gem 'aws-sdk-dynamodb', '~> 1.125'
+gem 'aws-sdk-ses', '~> 1.75'
 gem 'http', '~> 5.2'
 
 group :development do
