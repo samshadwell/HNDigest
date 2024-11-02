@@ -8,7 +8,7 @@ class DigestRenderer
     <br>
     <% for @post in @posts %>
       <p>
-        <%= @post['title'] %>
+        <%= ERB::Escape.html_escape(@post['title']) %>
         <br>
         <%= @post['points'] %> points -
         <% if @post['url'] %>
