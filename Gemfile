@@ -4,7 +4,7 @@ source 'https://rubygems.org'
 
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}" }
 
-gem 'aws-sdk-dynamodb', '~> 1.138'
+gem 'aws-sdk-dynamodb', '~> 1.142'
 gem 'aws-sdk-ses', '~> 1.82'
 gem 'http', '~> 5.2'
 gem 'nokogiri', '~> 1.18' # Peer requirement of aws-sdk
