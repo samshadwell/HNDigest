@@ -4,12 +4,12 @@ source 'https://rubygems.org'
 
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}" }
 
-gem 'aws-sdk-dynamodb', '~> 1.148'
-gem 'aws-sdk-ses', '~> 1.87'
+gem 'aws-sdk-dynamodb', '~> 1.153'
+gem 'aws-sdk-ses', '~> 1.90'
 gem 'http', '~> 5.3'
 gem 'nokogiri', '~> 1.18' # Peer requirement of aws-sdk
 
 group :development do
   gem 'pry-byebug', '~> 3.11'
-  gem 'rubocop', '~> 1.79', require: false
+  gem 'rubocop', '~> 1.81', require: false
 end
