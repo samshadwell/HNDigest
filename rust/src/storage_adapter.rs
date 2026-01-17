@@ -26,13 +26,7 @@ impl StorageAdapter {
         let datestamp = datestamp(date);
 
         
-        // We store 'posts' as a Map/JSON in existing Ruby code? 
-        // Ruby code: item = { posts: posts } where posts is a hash. DynamoDB ruby sdk automatically serializes hashes to Map (M).
-        // Let's verify if we should store as M or S (JSON string).
-        // Ruby: `posts:` where posts is a Hash. storage_adapter.rb:30.
-        // If Ruby SDK uses `put_item`, it converts Hash to M (Map).
-        // However, `posts` in Ruby `PostFetcher` returns a Hash `{ objectID => PostHash }`.
-        // So we need to store a Map of Maps.
+        
         
         let posts_av = to_dynamo_map(posts)?;
 
@@ -76,8 +70,6 @@ impl StorageAdapter {
 
     pub async fn save_digest(&self, type_: &str, date: DateTime<Utc>, posts: &[Post]) -> Result<()> {
         let datestamp = datestamp(date);
-        // Ruby: `posts: selected_posts` where selected_posts is Array of Hashes.
-        // So it stores as List (L) of Maps (M).
         
         let posts_av = to_dynamo_list(posts)?;
 
@@ -134,7 +126,6 @@ impl StorageAdapter {
                      return Ok(Some(emails));
                  }
                  // Try SS (String Set) if it was stored as set, or L (List).
-                 // Ruby aws-sdk might store array as List.
             }
         }
 

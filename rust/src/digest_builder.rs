@@ -26,10 +26,6 @@ impl DigestBuilder {
         let yesterday = date - Duration::days(1);
         let yesterday_digest = self.storage.fetch_digest(&strategy_type, yesterday).await?;
 
-        // Sort posts by points descending first, or after filtering?
-        // Ruby: unsent_posts = remove_sent_posts(...).sort_by points reverse.
-        // So filter then sort.
-        
         let mut unsent_posts = self.remove_sent_posts(posts, yesterday_digest.as_deref());
         
         unsent_posts.sort_by(|a, b| b.points.cmp(&a.points)); // Descending points

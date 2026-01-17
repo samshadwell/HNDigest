@@ -55,30 +55,10 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_ses::Client::new(&config);
 
-    // Wrap clients in Arc for sharing across tasks
-    // Actually, StorageAdapter and DigestMailer are cheap to clone if they just hold Client? 
-    // Types in AWS SDK are Clone (store Arc internally).
-    // Let's check StorageAdapter definition. It holds `Client`.
-    // DigestMailer holds `Client`.
-    // So we can clone the adapters themselves if we simple derive Clone or implement it, OR wrapped in Arc.
-    // Creating them inside Arc is easier.
-    
     let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client));
     let mailer = Arc::new(DigestMailer::new(ses_client));
-    // let digest_builder = Arc::new(DigestBuilder::new(&storage_adapter)); // DigestBuilder holds reference to StorageAdapter
-
-    // Problem: DigestBuilder holds reference `&'a StorageAdapter`.
-    // We should change DigestBuilder to hold `Arc<StorageAdapter>` or just `StorageAdapter` (since Client is cheap clone).
-    // Let's assume we modify DigestBuilder to own StorageAdapter (which owns Client).
-    // For now, let's keep it simple and just clone the clients if needed or share Arc.
     
-    // Actually, let's rewrite DigestBuilder to own the adapter to make life easier with 'static lifetimes in tokio::spawn.
-    // Wait, let's do that fix first.
-    
-    // Re-evaluating:
-    // Helper function to process strategy.
-    
-    let snapshotter = PostSnapshotter::new(&storage_adapter); // Needs to own or ref? currently ref.
+    let snapshotter = PostSnapshotter::new(&storage_adapter);
     
     info!("Snapshotting posts...");
     let all_posts_map = snapshotter.snapshot(date).await.map_err(|e| Error::from(e.to_string()))?;
@@ -105,10 +85,6 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
         handles.push(tokio::spawn(async move {
             let strategy_type = strategy.type_();
             info!("Processing strategy: {}", strategy_type);
-            
-            // Re-create builder or change its definition?
-            // Let's create `DigestBuilder` here. It takes `&StorageAdapter`. 
-            // `storage_adapter` is `Arc<StorageAdapter>`.
             let digest_builder = DigestBuilder::new(storage_adapter.clone());
 
             let posts = match digest_builder.build_digest(
