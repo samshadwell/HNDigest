@@ -24,8 +24,10 @@ impl PostFetcher {
     }
 
     pub async fn fetch(&self, top_k: usize, points: i32, since: i64) -> Result<HashMap<String, Post>> {
-        let top_k_posts = self.fetch_top_k(top_k, since).await?;
-        let by_points_posts = self.fetch_by_points(points, since).await?;
+        let (top_k_posts, by_points_posts) = tokio::try_join!(
+            self.fetch_top_k(top_k, since),
+            self.fetch_by_points(points, since)
+        )?;
 
         let mut combined = top_k_posts;
         combined.extend(by_points_posts);

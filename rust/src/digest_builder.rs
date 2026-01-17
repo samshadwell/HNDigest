@@ -5,12 +5,14 @@ use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashSet;
 
-pub struct DigestBuilder<'a> {
-    storage: &'a StorageAdapter,
+use std::sync::Arc;
+
+pub struct DigestBuilder {
+    storage: Arc<StorageAdapter>,
 }
 
-impl<'a> DigestBuilder<'a> {
-    pub fn new(storage: &'a StorageAdapter) -> Self {
+impl DigestBuilder {
+    pub fn new(storage: Arc<StorageAdapter>) -> Self {
         Self { storage }
     }
 
@@ -20,8 +22,9 @@ impl<'a> DigestBuilder<'a> {
         date: DateTime<Utc>,
         posts: &[Post],
     ) -> Result<Vec<Post>> {
+        let strategy_type = strategy.type_();
         let yesterday = date - Duration::days(1);
-        let yesterday_digest = self.storage.fetch_digest(&strategy.type_(), yesterday).await?;
+        let yesterday_digest = self.storage.fetch_digest(&strategy_type, yesterday).await?;
 
         // Sort posts by points descending first, or after filtering?
         // Ruby: unsent_posts = remove_sent_posts(...).sort_by points reverse.

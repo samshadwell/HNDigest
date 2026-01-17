@@ -2,7 +2,7 @@ use aws_sdk_ses::{
     types::{Body, Content, Destination, Message},
     Client,
 };
-use crate::digest_renderer::DigestRenderer;
+
 use anyhow::{Result, Context};
 use log::info;
 
@@ -20,10 +20,7 @@ impl DigestMailer {
         Self { ses_client }
     }
 
-    pub async fn send_mail(&self, renderer: &DigestRenderer<'_>, recipients: &[String]) -> Result<()> {
-        let subject = renderer.subject();
-        let content = renderer.content()?;
-
+    pub async fn send_mail(&self, subject: &str, content: &str, recipients: &[String]) -> Result<()> {
         for chunk in recipients.chunks(SES_RECIPIENT_LIMIT) {
             info!("Sending mail via SES to {} recipients...", chunk.len());
             
@@ -32,12 +29,12 @@ impl DigestMailer {
                 .build();
 
             let subject_content = Content::builder()
-                .data(&subject)
+                .data(subject)
                 .charset(ENCODING)
                 .build()?;
 
             let body_content = Content::builder()
-                .data(&content)
+                .data(content)
                 .charset(ENCODING)
                 .build()?;
 

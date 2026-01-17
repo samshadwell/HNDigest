@@ -1,6 +1,6 @@
 use crate::types::Post;
 
-pub trait DigestStrategy {
+pub trait DigestStrategy: Sync + Send {
     fn type_(&self) -> String;
     fn select(&self, posts: &[Post]) -> Vec<Post>;
 }

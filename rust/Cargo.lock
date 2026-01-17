@@ -1058,6 +1058,7 @@ dependencies = [
  "aws-sdk-ses",
  "chrono",
  "env_logger",
+ "futures",
  "lambda_runtime",
  "log",
  "reqwest",
