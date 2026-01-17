@@ -1,20 +1,27 @@
-FROM public.ecr.aws/sam/build-ruby3.3:latest-x86_64
+# Stage 1: Build Rust binary
+FROM rust:1.77 as builder
+WORKDIR /usr/src/app
+
+# Copy the Rust project
+COPY rust/ .
+
+# Build for release
+# We assume x86_64 target for AWS Lambda (or matching the user's setup)
+RUN cargo build --release
+
+# Rename binary to bootstrap
+RUN cp target/release/hndigest bootstrap
+
+# Stage 2: Prepare deployment artifact
+FROM amazonlinux:2023
+
+RUN yum install -y zip unzip aws-cli
+
 WORKDIR /var/task
 
-RUN gem update bundler
+COPY --from=builder /usr/src/app/bootstrap .
 
-ENV AWS_DEFAULT_REGION=us-west-2
+RUN zip -9yr lambda.zip bootstrap
 
-COPY Gemfile .
-COPY Gemfile.lock .
-
-RUN bundle config set --local deployment 'true'
-RUN bundle config set --local without 'development'
-RUN bundle config set --local path 'vendor/bundle'
-RUN bundle install
-
-COPY . .
-
-RUN zip -9yr lambda.zip .
-
-CMD ["aws", "lambda", "update-function-code", "--function-name", "HNDigest", "--zip-file", "fileb://lambda.zip"]
+# Deployment command
+CMD ["sh", "-c", "aws lambda update-function-configuration --function-name HNDigest --runtime provided.al2023 --handler bootstrap && aws lambda update-function-code --function-name HNDigest --zip-file fileb://lambda.zip"]

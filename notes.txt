@@ -1,0 +1,14 @@
+Use-cases:
+
+As a new user, I want to subscribe to the newsletter
+As a new user, I want to see sample newsletters
+As an existing user, I want to unsubscribe from the newsletter -> Include some token in newsletter itself? No token, want to be able to use old emails. Just use their email
+As an existing user, I want to change my subscription preferences
+
+PK, SK
+SUBSCRIPTIONS, <email address> -> subscription type, created at
+DIGEST#TOPN, <datestamp>
+
+new user, insert into table (or upsert in case of change)
+sample page, query for a single digest/type for the most recent datestamp
+remove subscription by email, remove entry
