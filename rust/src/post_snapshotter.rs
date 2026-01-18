@@ -24,9 +24,9 @@ impl<'a> PostSnapshotter<'a> {
     pub async fn snapshot(&self, date: DateTime<Utc>) -> Result<HashMap<String, Post>> {
         let max_top_n = TOP_N_VALUES.iter().max().copied().unwrap_or(50);
         let min_points = POINT_THRESHOLD_VALUES.iter().min().copied().unwrap_or(100);
-        
+
         let since = date.timestamp() - LOOKBACK_SECONDS;
-        
+
         // 2x top n in case all the top n were sent yesterday.
         let posts = self.fetcher.fetch(2 * max_top_n, min_points, since).await?;
 

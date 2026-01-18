@@ -3,7 +3,7 @@ use aws_sdk_ses::{
     Client,
 };
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use log::info;
 
 const SES_RECIPIENT_LIMIT: usize = 50;
@@ -20,7 +20,12 @@ impl DigestMailer {
         Self { ses_client }
     }
 
-    pub async fn send_mail(&self, subject: &str, content: &str, recipients: &[String]) -> Result<()> {
+    pub async fn send_mail(
+        &self,
+        subject: &str,
+        content: &str,
+        recipients: &[String],
+    ) -> Result<()> {
         // TODO: Temporary for side-by-side deployment
         let subject = format!("[RUST] {}", subject);
         let filtered_recipients: Vec<String> = recipients
@@ -31,7 +36,7 @@ impl DigestMailer {
 
         for chunk in filtered_recipients.chunks(SES_RECIPIENT_LIMIT) {
             info!("Sending mail via SES to {} recipients...", chunk.len());
-            
+
             let dest = Destination::builder()
                 .set_bcc_addresses(Some(chunk.to_vec()))
                 .build();
@@ -41,21 +46,18 @@ impl DigestMailer {
                 .charset(ENCODING)
                 .build()?;
 
-            let body_content = Content::builder()
-                .data(content)
-                .charset(ENCODING)
-                .build()?;
+            let body_content = Content::builder().data(content).charset(ENCODING).build()?;
 
-            let body = Body::builder()
-                .html(body_content)
-                .build();
+            let body = Body::builder().html(body_content).build();
 
             let message = Message::builder()
                 .subject(subject_content)
                 .body(body)
                 .build();
 
-            let response = self.ses_client.send_email()
+            let response = self
+                .ses_client
+                .send_email()
                 .source(FROM)
                 .destination(dest)
                 .reply_to_addresses(REPLY_TO)

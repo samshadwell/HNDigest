@@ -1,26 +1,26 @@
 mod configuration;
-mod types;
-mod storage_adapter;
-mod post_fetcher;
-mod post_snapshotter;
-mod strategies;
 mod digest_builder;
 mod digest_mailer;
+mod post_fetcher;
+mod post_snapshotter;
+mod storage_adapter;
+mod strategies;
+mod types;
 
-use aws_config::BehaviorVersion;
-use lambda_runtime::{service_fn, Error, LambdaEvent};
-use serde_json::Value;
-use chrono::{Timelike, Utc};
-use log::{info, error};
-use std::sync::Arc;
-use askama::Template;
-use crate::storage_adapter::StorageAdapter;
-use crate::post_snapshotter::PostSnapshotter;
+use crate::configuration::{POINT_THRESHOLD_VALUES, TOP_N_VALUES};
 use crate::digest_builder::DigestBuilder;
 use crate::digest_mailer::DigestMailer;
-use crate::strategies::{DigestStrategy, TopNPosts, OverPointThreshold};
-use crate::configuration::{TOP_N_VALUES, POINT_THRESHOLD_VALUES};
+use crate::post_snapshotter::PostSnapshotter;
+use crate::storage_adapter::StorageAdapter;
+use crate::strategies::{DigestStrategy, OverPointThreshold, TopNPosts};
 use crate::types::Post;
+use askama::Template;
+use aws_config::BehaviorVersion;
+use chrono::{Timelike, Utc};
+use lambda_runtime::{service_fn, Error, LambdaEvent};
+use log::{error, info};
+use serde_json::Value;
+use std::sync::Arc;
 
 const SNAPSHOT_DAILY_HOUR: u32 = 5;
 
@@ -33,7 +33,7 @@ struct DigestTemplate<'a> {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     env_logger::init();
-    
+
     let func = service_fn(func);
     lambda_runtime::run(func).await?;
     Ok(())
@@ -41,14 +41,18 @@ async fn main() -> Result<(), Error> {
 
 async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
     info!("Starting HNDigest handler...");
-    
+
     let now = Utc::now();
     let date = now
-        .with_hour(SNAPSHOT_DAILY_HOUR).unwrap()
-        .with_minute(0).unwrap()
-        .with_second(0).unwrap()
-        .with_nanosecond(0).unwrap();
-        
+        .with_hour(SNAPSHOT_DAILY_HOUR)
+        .unwrap()
+        .with_minute(0)
+        .unwrap()
+        .with_second(0)
+        .unwrap()
+        .with_nanosecond(0)
+        .unwrap();
+
     info!("Processing for date: {}", date);
 
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
@@ -57,11 +61,14 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
 
     let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client));
     let mailer = Arc::new(DigestMailer::new(ses_client));
-    
+
     let snapshotter = PostSnapshotter::new(&storage_adapter);
-    
+
     info!("Snapshotting posts...");
-    let all_posts_map = snapshotter.snapshot(date).await.map_err(|e| Error::from(e.to_string()))?;
+    let all_posts_map = snapshotter
+        .snapshot(date)
+        .await
+        .map_err(|e| Error::from(e.to_string()))?;
     let all_posts: Arc<Vec<Post>> = Arc::new(all_posts_map.values().cloned().collect());
 
     // Build strategies list
@@ -81,17 +88,16 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
         let all_posts = all_posts.clone();
         // digest_builder holds &StorageAdapter. Passing ref across thread boundary is hard without Arc.
         // We will construct DigestBuilder inside the task or change definition.
-        
+
         handles.push(tokio::spawn(async move {
             let strategy_type = strategy.type_();
             info!("Processing strategy: {}", strategy_type);
             let digest_builder = DigestBuilder::new(storage_adapter.clone());
 
-            let posts = match digest_builder.build_digest(
-                strategy.as_ref(), 
-                date,
-                &all_posts
-            ).await {
+            let posts = match digest_builder
+                .build_digest(strategy.as_ref(), date, &all_posts)
+                .await
+            {
                 Ok(p) => p,
                 Err(e) => {
                     error!("Failed to build digest for {}: {}", strategy_type, e);
@@ -99,7 +105,11 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
                 }
             };
 
-            info!("Selected {} posts for digest {}", posts.len(), strategy_type);
+            info!(
+                "Selected {} posts for digest {}",
+                posts.len(),
+                strategy_type
+            );
 
             let subscribers = match storage_adapter.fetch_subscribers(&strategy_type).await {
                 Ok(s) => s,
@@ -108,23 +118,23 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
                     return Err(e);
                 }
             };
-            
+
             if let Some(subs) = subscribers {
                 if !subs.is_empty() {
                     let tmpl = DigestTemplate { posts: &posts };
                     let content = match tmpl.render() {
                         Ok(c) => c,
                         Err(e) => {
-                             error!("Failed to render template for {}: {}", strategy_type, e);
-                             return Err(anyhow::Error::from(e));
+                            error!("Failed to render template for {}: {}", strategy_type, e);
+                            return Err(anyhow::Error::from(e));
                         }
                     };
-                    
+
                     let subject = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
-                    
+
                     if let Err(e) = mailer.send_mail(&subject, &content, &subs).await {
-                         error!("Failed to send mail for {}: {}", strategy_type, e);
-                         return Err(e);
+                        error!("Failed to send mail for {}: {}", strategy_type, e);
+                        return Err(e);
                     }
                 } else {
                     info!("No subscribers for strategy {}", strategy_type);
@@ -140,7 +150,7 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let results = futures::future::join_all(handles).await;
     for res in results {
         match res {
-            Ok(Ok(_)) => {},
+            Ok(Ok(_)) => {}
             Ok(Err(e)) => error!("Strategy execution failed: {}", e),
             Err(e) => error!("Task failed: {}", e),
         }

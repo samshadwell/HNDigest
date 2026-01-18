@@ -27,19 +27,26 @@ impl DigestBuilder {
         let yesterday_digest = self.storage.fetch_digest(&strategy_type, yesterday).await?;
 
         let mut unsent_posts = self.remove_sent_posts(posts, yesterday_digest.as_deref());
-        
+
         unsent_posts.sort_by(|a, b| b.points.cmp(&a.points)); // Descending points
 
         let selected_posts = strategy.select(&unsent_posts);
 
-        self.storage.save_digest(&strategy.type_(), date, &selected_posts).await?;
+        self.storage
+            .save_digest(&strategy.type_(), date, &selected_posts)
+            .await?;
 
         Ok(selected_posts)
     }
 
-    fn remove_sent_posts(&self, all_posts: &[Post], yesterday_digest: Option<&[Post]>) -> Vec<Post> {
+    fn remove_sent_posts(
+        &self,
+        all_posts: &[Post],
+        yesterday_digest: Option<&[Post]>,
+    ) -> Vec<Post> {
         if let Some(digest_posts) = yesterday_digest {
-            let sent_ids: HashSet<&str> = digest_posts.iter().map(|p| p.object_id.as_str()).collect();
+            let sent_ids: HashSet<&str> =
+                digest_posts.iter().map(|p| p.object_id.as_str()).collect();
             all_posts
                 .iter()
                 .filter(|p| !sent_ids.contains(p.object_id.as_str()))
