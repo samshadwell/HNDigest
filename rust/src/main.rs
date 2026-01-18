@@ -111,6 +111,11 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
                 strategy_type
             );
 
+            if posts.is_empty() {
+                info!("No posts for strategy {}. Skipping.", strategy_type);
+                return Ok(());
+            }
+
             let subscribers = match storage_adapter.fetch_subscribers(&strategy_type).await {
                 Ok(s) => s,
                 Err(e) => {
