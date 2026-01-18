@@ -1,38 +1,30 @@
 use crate::types::Post;
+use std::fmt;
 
-pub trait DigestStrategy: Sync + Send {
-    fn type_(&self) -> String;
-    fn select(&self, posts: &[Post]) -> Vec<Post>;
+#[derive(Debug, Clone, Copy)]
+pub enum DigestStrategy {
+    TopN(usize),
+    OverPointThreshold(i32),
 }
 
-pub struct TopNPosts {
-    pub n: usize,
-}
-
-impl DigestStrategy for TopNPosts {
-    fn type_(&self) -> String {
-        format!("TOP_N#{}", self.n)
+impl DigestStrategy {
+    pub fn select(&self, posts: &[Post]) -> Vec<Post> {
+        match self {
+            Self::TopN(n) => posts.iter().take(*n).cloned().collect(),
+            Self::OverPointThreshold(threshold) => posts
+                .iter()
+                .filter(|p| p.points >= *threshold)
+                .cloned()
+                .collect(),
+        }
     }
-
-    fn select(&self, posts: &[Post]) -> Vec<Post> {
-        posts.iter().take(self.n).cloned().collect()
-    }
 }
 
-pub struct OverPointThreshold {
-    pub threshold: i32,
-}
-
-impl DigestStrategy for OverPointThreshold {
-    fn type_(&self) -> String {
-        format!("POINT_THRESHOLD#{}", self.threshold)
-    }
-
-    fn select(&self, posts: &[Post]) -> Vec<Post> {
-        posts
-            .iter()
-            .filter(|p| p.points >= self.threshold)
-            .cloned()
-            .collect()
+impl fmt::Display for DigestStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TopN(n) => write!(f, "TOP_N#{}", n),
+            Self::OverPointThreshold(threshold) => write!(f, "POINT_THRESHOLD#{}", threshold),
+        }
     }
 }

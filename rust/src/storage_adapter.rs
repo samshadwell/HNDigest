@@ -1,14 +1,14 @@
 use crate::types::Post;
 use anyhow::{Context, Result};
-use aws_sdk_dynamodb::{types::AttributeValue, Client};
-use chrono::{DateTime, Utc};
+use aws_sdk_dynamodb::{Client, types::AttributeValue};
+use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 
 const TABLE: &str = "HNDigest";
 const SNAPSHOT_PARTITION_KEY: &str = "POSTS_SNAPSHOT";
 const DIGEST_PARTITION_KEY_PREFIX: &str = "DIGEST";
 const SUBSCRIBERS_PARTITION_KEY: &str = "SUBSCRIBERS";
-const MODEL_TTL: i64 = 30 * 24 * 60 * 60; // 30 days in seconds
+const MODEL_TTL_DAYS: i64 = 30;
 
 pub struct StorageAdapter {
     client: Client,
@@ -36,7 +36,9 @@ impl StorageAdapter {
             ("posts".to_string(), posts_av),
             (
                 "expires_at".to_string(),
-                AttributeValue::N((date.timestamp() + MODEL_TTL).to_string()),
+                AttributeValue::N(
+                    ((date + Duration::days(MODEL_TTL_DAYS)).timestamp()).to_string(),
+                ),
             ),
         ]);
 
@@ -70,7 +72,9 @@ impl StorageAdapter {
             ("posts".to_string(), posts_av),
             (
                 "expires_at".to_string(),
-                AttributeValue::N((date.timestamp() + MODEL_TTL).to_string()),
+                AttributeValue::N(
+                    ((date + Duration::days(MODEL_TTL_DAYS)).timestamp()).to_string(),
+                ),
             ),
         ]);
 
@@ -102,14 +106,11 @@ impl StorageAdapter {
             .await
             .context("Failed to fetch digest")?;
 
-        if let Some(item) = output.item {
-            if let Some(posts_av) = item.get("posts") {
-                let posts: Vec<Post> = from_dynamo_list(posts_av)?;
-                return Ok(Some(posts));
-            }
-        }
-
-        Ok(None)
+        output
+            .item
+            .and_then(|item| item.get("posts").cloned())
+            .map(|posts_av| from_dynamo_list(&posts_av))
+            .transpose()
     }
 
     pub async fn fetch_subscribers(&self, type_: &str) -> Result<Option<Vec<String>>> {
@@ -126,16 +127,11 @@ impl StorageAdapter {
             .await
             .context("Failed to fetch subscribers")?;
 
-        if let Some(item) = output.item {
-            if let Some(emails_av) = item.get("emails") {
-                if let Ok(emails) = as_string_list(emails_av) {
-                    return Ok(Some(emails));
-                }
-                // Try SS (String Set) if it was stored as set, or L (List).
-            }
-        }
-
-        Ok(None)
+        output
+            .item
+            .and_then(|item| item.get("emails").cloned())
+            .map(|emails_av| as_string_list(&emails_av))
+            .transpose()
     }
 }
 
@@ -165,73 +161,55 @@ fn from_dynamo_list(av: &AttributeValue) -> Result<Vec<Post>> {
 
 fn as_string_list(av: &AttributeValue) -> Result<Vec<String>> {
     match av {
-        AttributeValue::L(list) => {
-            let mut res = Vec::new();
-            for item in list {
-                if let AttributeValue::S(s) = item {
-                    res.push(s.clone());
-                }
-            }
-            Ok(res)
-        }
+        AttributeValue::L(list) => Ok(list
+            .iter()
+            .filter_map(|item| match item {
+                AttributeValue::S(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect()),
         AttributeValue::Ss(set) => Ok(set.clone()),
-        _ => Ok(vec![]),
+        _ => anyhow::bail!("Expected list or string set attribute"),
     }
 }
 
-// Simplified Serde <-> DynamoDB AV conversion
-// For recursion, we need to handle Object (Map), Array (List), String, Number, etc.
+/// Convert a JSON value to a DynamoDB AttributeValue.
 fn json_to_av(json: &serde_json::Value) -> Result<AttributeValue> {
-    match json {
-        serde_json::Value::Null => Ok(AttributeValue::Null(true)),
-        serde_json::Value::Bool(b) => Ok(AttributeValue::Bool(*b)),
-        serde_json::Value::Number(n) => Ok(AttributeValue::N(n.to_string())),
-        serde_json::Value::String(s) => Ok(AttributeValue::S(s.clone())),
+    Ok(match json {
+        serde_json::Value::Null => AttributeValue::Null(true),
+        serde_json::Value::Bool(b) => AttributeValue::Bool(*b),
+        serde_json::Value::Number(n) => AttributeValue::N(n.to_string()),
+        serde_json::Value::String(s) => AttributeValue::S(s.clone()),
         serde_json::Value::Array(arr) => {
-            let mut list = Vec::new();
-            for item in arr {
-                list.push(json_to_av(item)?);
-            }
-            Ok(AttributeValue::L(list))
+            AttributeValue::L(arr.iter().map(json_to_av).collect::<Result<_>>()?)
         }
-        serde_json::Value::Object(map) => {
-            let mut m = HashMap::new();
-            for (k, v) in map {
-                m.insert(k.clone(), json_to_av(v)?);
-            }
-            Ok(AttributeValue::M(m))
-        }
-    }
+        serde_json::Value::Object(map) => AttributeValue::M(
+            map.iter()
+                .map(|(k, v)| json_to_av(v).map(|av| (k.clone(), av)))
+                .collect::<Result<_>>()?,
+        ),
+    })
 }
 
+/// Convert a DynamoDB AttributeValue back to JSON.
 fn av_to_json(av: &AttributeValue) -> Result<serde_json::Value> {
-    match av {
-        AttributeValue::Null(_) => Ok(serde_json::Value::Null),
-        AttributeValue::Bool(b) => Ok(serde_json::Value::Bool(*b)),
-        AttributeValue::N(n) => {
-            if let Ok(i) = n.parse::<i64>() {
-                Ok(serde_json::json!(i))
-            } else if let Ok(f) = n.parse::<f64>() {
-                Ok(serde_json::json!(f))
-            } else {
-                Ok(serde_json::Value::String(n.clone())) // Fallback
-            }
-        }
-        AttributeValue::S(s) => Ok(serde_json::Value::String(s.clone())),
+    Ok(match av {
+        AttributeValue::Null(_) => serde_json::Value::Null,
+        AttributeValue::Bool(b) => serde_json::Value::Bool(*b),
+        AttributeValue::N(n) => n
+            .parse::<i64>()
+            .map(Into::into)
+            .or_else(|_| n.parse::<f64>().map(Into::into))
+            .unwrap_or_else(|_| serde_json::Value::String(n.clone())),
+        AttributeValue::S(s) => serde_json::Value::String(s.clone()),
         AttributeValue::L(list) => {
-            let mut arr = Vec::new();
-            for item in list {
-                arr.push(av_to_json(item)?);
-            }
-            Ok(serde_json::Value::Array(arr))
+            serde_json::Value::Array(list.iter().map(av_to_json).collect::<Result<_>>()?)
         }
-        AttributeValue::M(map) => {
-            let mut obj = serde_json::Map::<String, serde_json::Value>::new();
-            for (k, v) in map {
-                obj.insert(k.clone(), av_to_json(v)?);
-            }
-            Ok(serde_json::Value::Object(obj))
-        }
-        _ => Ok(serde_json::Value::Null), // Ignore binary/set types for now if not expected
-    }
+        AttributeValue::M(map) => serde_json::Value::Object(
+            map.iter()
+                .map(|(k, v)| av_to_json(v).map(|json| (k.clone(), json)))
+                .collect::<Result<_>>()?,
+        ),
+        _ => serde_json::Value::Null, // Ignore binary/set types
+    })
 }

@@ -1,6 +1,6 @@
 use aws_sdk_ses::{
-    types::{Body, Content, Destination, Message},
     Client,
+    types::{Body, Content, Destination, Message},
 };
 
 use anyhow::{Context, Result};

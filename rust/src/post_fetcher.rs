@@ -16,11 +16,17 @@ pub struct PostFetcher {
     client: Client,
 }
 
-impl PostFetcher {
-    pub fn new() -> Self {
+impl Default for PostFetcher {
+    fn default() -> Self {
         Self {
             client: Client::new(),
         }
+    }
+}
+
+impl PostFetcher {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub async fn fetch(
@@ -57,19 +63,12 @@ impl PostFetcher {
     }
 
     async fn fetch_posts_from_path(&self, url: &str) -> Result<HashMap<String, Post>> {
-        let resp = self
-            .client
-            .get(url)
-            .send()
-            .await?
-            .json::<AlgoliaResponse>()
-            .await?;
+        let resp: AlgoliaResponse = self.client.get(url).send().await?.json().await?;
 
-        let mut posts = HashMap::new();
-        for post in resp.hits {
-            posts.insert(post.object_id.clone(), post);
-        }
-
-        Ok(posts)
+        Ok(resp
+            .hits
+            .into_iter()
+            .map(|post| (post.object_id.clone(), post))
+            .collect())
     }
 }
