@@ -58,10 +58,8 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_ses::Client::new(&config);
-
     let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client));
     let mailer = Arc::new(DigestMailer::new(ses_client));
-
     let snapshotter = PostSnapshotter::new(&storage_adapter);
 
     info!("Snapshotting posts...");
@@ -71,8 +69,8 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
         .map_err(|e| Error::from(e.to_string()))?;
     let all_posts: Arc<Vec<Post>> = Arc::new(all_posts_map.values().cloned().collect());
 
-    // Build strategies list
-    let mut strategies: Vec<Box<dyn DigestStrategy + Send + Sync>> = Vec::new();
+    let mut strategies: Vec<Box<dyn DigestStrategy + Send + Sync>> =
+        Vec::with_capacity(TOP_N_VALUES.len() + POINT_THRESHOLD_VALUES.len());
     for &n in TOP_N_VALUES {
         strategies.push(Box::new(TopNPosts { n }));
     }
@@ -80,8 +78,7 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
         strategies.push(Box::new(OverPointThreshold { threshold: t }));
     }
 
-    let mut handles = Vec::new();
-
+    let mut handles = Vec::with_capacity(strategies.len());
     for strategy in strategies {
         let storage_adapter = storage_adapter.clone();
         let mailer = mailer.clone();
