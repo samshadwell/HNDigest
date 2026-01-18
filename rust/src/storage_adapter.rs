@@ -24,10 +24,6 @@ impl StorageAdapter {
 
     pub async fn snapshot_posts(&self, posts: &HashMap<String, Post>, date: DateTime<Utc>) -> Result<()> {
         let datestamp = datestamp(date);
-
-        
-        
-        
         let posts_av = to_dynamo_map(posts)?;
 
         let item = HashMap::from([

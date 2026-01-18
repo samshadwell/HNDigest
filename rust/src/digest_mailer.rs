@@ -21,7 +21,15 @@ impl DigestMailer {
     }
 
     pub async fn send_mail(&self, subject: &str, content: &str, recipients: &[String]) -> Result<()> {
-        for chunk in recipients.chunks(SES_RECIPIENT_LIMIT) {
+        // TODO: Temporary for side-by-side deployment
+        let subject = format!("[RUST] {}", subject);
+        let filtered_recipients: Vec<String> = recipients
+            .iter()
+            .filter(|r| *r == "newsletters@samshadwell.com")
+            .cloned()
+            .collect();
+
+        for chunk in filtered_recipients.chunks(SES_RECIPIENT_LIMIT) {
             info!("Sending mail via SES to {} recipients...", chunk.len());
             
             let dest = Destination::builder()
@@ -29,7 +37,7 @@ impl DigestMailer {
                 .build();
 
             let subject_content = Content::builder()
-                .data(subject)
+                .data(&subject)
                 .charset(ENCODING)
                 .build()?;
 

@@ -1,5 +1,5 @@
 # Stage 1: Build Rust binary
-FROM rust:1.77 as builder
+FROM rust:1.92 as builder
 WORKDIR /usr/src/app
 
 # Copy the Rust project
@@ -24,4 +24,4 @@ COPY --from=builder /usr/src/app/bootstrap .
 RUN zip -9yr lambda.zip bootstrap
 
 # Deployment command
-CMD ["sh", "-c", "aws lambda update-function-configuration --function-name HNDigest --runtime provided.al2023 --handler bootstrap && aws lambda update-function-code --function-name HNDigest --zip-file fileb://lambda.zip"]
+CMD ["sh", "-c", "aws lambda update-function-configuration --function-name ${LAMBDA_FUNCTION_NAME:-HNDigest} --runtime provided.al2023 --handler bootstrap && aws lambda update-function-code --function-name ${LAMBDA_FUNCTION_NAME:-HNDigest} --zip-file fileb://lambda.zip"]
