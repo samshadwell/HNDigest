@@ -17,7 +17,7 @@ use crate::types::Post;
 use askama::Template;
 use aws_config::BehaviorVersion;
 use chrono::{Timelike, Utc};
-use lambda_runtime::{service_fn, Error, LambdaEvent};
+use lambda_runtime::{Error, LambdaEvent, service_fn};
 use log::{error, info};
 use serde_json::Value;
 use std::sync::Arc;
@@ -124,28 +124,26 @@ async fn func(_event: LambdaEvent<Value>) -> Result<(), Error> {
                 }
             };
 
-            if let Some(subs) = subscribers {
-                if !subs.is_empty() {
-                    let tmpl = DigestTemplate { posts: &posts };
-                    let content = match tmpl.render() {
-                        Ok(c) => c,
-                        Err(e) => {
-                            error!("Failed to render template for {}: {}", strategy_type, e);
-                            return Err(anyhow::Error::from(e));
-                        }
-                    };
-
-                    let subject = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
-
-                    if let Err(e) = mailer.send_mail(&subject, &content, &subs).await {
-                        error!("Failed to send mail for {}: {}", strategy_type, e);
-                        return Err(e);
+            if let Some(subs) = subscribers
+                && !subs.is_empty()
+            {
+                let tmpl = DigestTemplate { posts: &posts };
+                let content = match tmpl.render() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        error!("Failed to render template for {}: {}", strategy_type, e);
+                        return Err(anyhow::Error::from(e));
                     }
-                } else {
-                    info!("No subscribers for strategy {}", strategy_type);
+                };
+
+                let subject = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
+
+                if let Err(e) = mailer.send_mail(&subject, &content, &subs).await {
+                    error!("Failed to send mail for {}: {}", strategy_type, e);
+                    return Err(e);
                 }
             } else {
-                info!("No subscribers (None) for strategy {}", strategy_type);
+                info!("No subscribers for strategy {}", strategy_type);
             }
             Ok::<(), anyhow::Error>(())
         }));
