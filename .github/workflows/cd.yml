@@ -49,6 +49,8 @@ jobs:
 
       - name: Install OpenTofu
         uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_wrapper: false
 
       - name: Initialize
         run: tofu init
@@ -56,18 +58,19 @@ jobs:
       - name: Plan
         id: plan
         run: |
-          set +e -o pipefail
-          tofu plan -detailed-exitcode -out=tfplan 2>&1 | tee plan_output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
+          set +e
+          tofu plan -detailed-exitcode -out=tfplan > plan_output.txt 2>&1
+          EXIT_CODE=$?
           set -e
+
+          cat plan_output.txt
 
           if [ $EXIT_CODE -eq 0 ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "No changes detected"
           elif [ $EXIT_CODE -eq 2 ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
           else
-            echo "Plan failed"
+            echo "Plan failed with exit code $EXIT_CODE"
             exit 1
           fi
 
@@ -94,6 +97,9 @@ jobs:
               ? lines.slice(Math.max(0, planIndex - 10)).join('\n')
               : lines.slice(-50).join('\n');
 
+            // Strip ANSI escape codes
+            const cleanSummary = summary.replace(/\u001b\[[0-9;]*m/g, '');
+
             const body = `### OpenTofu Plan
 
             This PR includes infrastructure changes. Please review the plan before merging.
@@ -102,7 +108,7 @@ jobs:
             <summary>Plan Summary</summary>
 
             \`\`\`
-            ${summary.slice(0, 60000)}
+            ${cleanSummary.slice(0, 60000)}
             \`\`\`
 
             </details>

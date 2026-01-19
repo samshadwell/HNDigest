@@ -19,7 +19,7 @@ variable "lambda_memory_size" {
 variable "lambda_timeout" {
   description = "Timeout for the Lambda function in seconds"
   type        = number
-  default     = 60
+  default     = 15
 }
 
 variable "schedule_expression" {
