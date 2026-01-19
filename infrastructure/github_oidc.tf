@@ -1,8 +1,5 @@
 # GitHub Actions OIDC provider
-data "aws_iam_openid_connect_provider" "github" {
-  count = var.create_github_oidc_provider ? 0 : 1
-  url   = "https://token.actions.githubusercontent.com"
-}
+data "aws_caller_identity" "current" {}
 
 resource "aws_iam_openid_connect_provider" "github" {
   count           = var.create_github_oidc_provider ? 1 : 0
@@ -12,7 +9,8 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
-  github_oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+  # Construct ARN directly to avoid needing iam:ListOpenIDConnectProviders permission
+  github_oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 }
 
 # IAM role for GitHub Actions
