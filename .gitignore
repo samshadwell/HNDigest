@@ -1,5 +1,11 @@
-vendor/
-sendgrid.env
+## File system
+.DS_Store
+desktop.ini
 
-# Rust
-target/
+## Tool
+.cargo
+.claude
+
+## Build
+/debug
+/target
