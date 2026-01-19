@@ -26,28 +26,15 @@ impl DigestMailer {
         content: &str,
         recipients: &[String],
     ) -> Result<()> {
-        // TODO: Temporary for side-by-side deployment
-        let subject = format!("[RUST] {}", subject);
-        let filtered_recipients: Vec<String> = recipients
-            .iter()
-            .filter(|r| *r == "newsletters@samshadwell.com")
-            .cloned()
-            .collect();
-
-        for chunk in filtered_recipients.chunks(SES_RECIPIENT_LIMIT) {
+        for chunk in recipients.chunks(SES_RECIPIENT_LIMIT) {
             info!("Sending mail via SES to {} recipients...", chunk.len());
 
             let dest = Destination::builder()
                 .set_bcc_addresses(Some(chunk.to_vec()))
                 .build();
 
-            let subject_content = Content::builder()
-                .data(&subject)
-                .charset(ENCODING)
-                .build()?;
-
+            let subject_content = Content::builder().data(subject).charset(ENCODING).build()?;
             let body_content = Content::builder().data(content).charset(ENCODING).build()?;
-
             let body = Body::builder().html(body_content).build();
 
             let message = Message::builder()
