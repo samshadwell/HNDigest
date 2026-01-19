@@ -9,3 +9,10 @@ desktop.ini
 ## Build
 /debug
 /target
+
+## OpenTofu
+infrastructure/.placeholder.zip
+infrastructure/.terraform
+infrastructure/*.tfstate
+infrastructure/*.tfstate.backup
+infrastructure/terraform.tfvars
