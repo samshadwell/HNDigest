@@ -56,10 +56,7 @@ jobs:
       - name: Plan
         id: plan
         run: |
-          set +e -o pipefail
-          tofu plan -detailed-exitcode -out=tfplan 2>&1 | tee plan_output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          set -e
+          tofu plan -detailed-exitcode -out=tfplan 2>&1 | tee plan_output.txt; EXIT_CODE=${PIPESTATUS[0]}
 
           if [ $EXIT_CODE -eq 0 ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
@@ -68,6 +65,7 @@ jobs:
             echo "has_changes=true" >> $GITHUB_OUTPUT
           else
             echo "Plan failed"
+            cat plan_output.txt
             exit 1
           fi
 
