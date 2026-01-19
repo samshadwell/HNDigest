@@ -37,3 +37,21 @@ variable "ses_reply_to_email" {
   description = "Reply-to email address (e.g., hello@example.com)"
   type        = string
 }
+
+variable "github_repository" {
+  description = "GitHub repository in format owner/repo for OIDC trust"
+  type        = string
+  default     = "samshadwell/HNDigest"
+}
+
+variable "state_bucket_name" {
+  description = "Name of the S3 bucket storing OpenTofu state"
+  type        = string
+  default     = "hndigest-tfstate"
+}
+
+variable "create_github_oidc_provider" {
+  description = "Whether to create the GitHub OIDC provider (set to false if it already exists in your account)"
+  type        = bool
+  default     = true
+}

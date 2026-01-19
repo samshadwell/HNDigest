@@ -1,0 +1,170 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/cd.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/cd.yml"
+
+# On main: only one workflow at a time (queue, don't cancel)
+# On PRs: each PR runs independently
+concurrency:
+  group: ${{ github.event_name == 'push' && 'cd-main' || format('cd-pr-{0}', github.event.number) }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: us-west-2
+  TF_VAR_create_github_oidc_provider: false
+  TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
+  TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
+
+jobs:
+  plan:
+    name: "Plan"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Initialize
+        run: tofu init
+
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          tofu plan -detailed-exitcode -out=tfplan 2>&1 | tee plan_output.txt
+          EXIT_CODE=$?
+          set -e
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes detected"
+          elif [ $EXIT_CODE -eq 2 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "Plan failed"
+            exit 1
+          fi
+
+      - name: Upload plan artifact
+        if: steps.plan.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: infrastructure/tfplan
+          retention-days: 1
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && steps.plan.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planOutput = fs.readFileSync('infrastructure/plan_output.txt', 'utf8');
+
+            // Extract just the summary (last ~50 lines or the part after "Plan:")
+            const lines = planOutput.split('\n');
+            const planIndex = lines.findIndex(l => l.includes('Plan:'));
+            const summary = planIndex >= 0
+              ? lines.slice(Math.max(0, planIndex - 10)).join('\n')
+              : lines.slice(-50).join('\n');
+
+            const body = `### OpenTofu Plan
+
+            This PR includes infrastructure changes. Please review the plan before merging.
+
+            <details>
+            <summary>Plan Summary</summary>
+
+            \`\`\`
+            ${summary.slice(0, 60000)}
+            \`\`\`
+
+            </details>
+
+            > Run \`tofu plan\` locally for the full output.`;
+
+            // Check for existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('### OpenTofu Plan')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  apply:
+    name: "Apply"
+    needs: plan
+    if: github.event_name == 'push' && needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: infrastructure
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Initialize
+        run: tofu init
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: infrastructure
+
+      - name: Apply
+        run: tofu apply -auto-approve tfplan

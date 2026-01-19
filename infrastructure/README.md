@@ -87,6 +87,26 @@ cd ..  # back to project root
 ./deploy.sh
 ```
 
+### 7. Configure GitHub Actions CD (Optional)
+
+The infrastructure includes OIDC authentication for GitHub Actions, enabling automated deployments.
+
+After running `tofu apply`, note the `github_actions_role_arn` output, then configure GitHub:
+
+1. **Create a GitHub environment** named `production`:
+   - Go to your repo → Settings → Environments → New environment
+   - Name it `production`
+   - Enable "Required reviewers" and add yourself
+
+2. **Add repository variables** (Settings → Secrets and variables → Actions → Variables):
+   - `AWS_ROLE_ARN`: The `github_actions_role_arn` output from OpenTofu
+   - `SES_FROM_EMAIL`: Your sender email address
+   - `SES_REPLY_TO_EMAIL`: Your reply-to email address
+
+Once configured:
+- PRs with infrastructure changes will show a plan summary as a comment
+- Merges to `main` will wait for approval in the `production` environment before applying
+
 ## Variables Reference
 
 | Variable | Description | Default |
@@ -98,6 +118,9 @@ cd ..  # back to project root
 | `lambda_memory_size` | Lambda memory in MB | `256` |
 | `lambda_timeout` | Lambda timeout in seconds | `60` |
 | `schedule_expression` | EventBridge cron expression | `cron(0 5 * * ? *)` |
+| `github_repository` | GitHub repo for OIDC trust (owner/repo) | `samshadwell/HNDigest` |
+| `state_bucket_name` | S3 bucket name for OpenTofu state | `hndigest-tfstate` |
+| `create_github_oidc_provider` | Create GitHub OIDC provider (false if exists) | `true` |
 
 ## Outputs
 
@@ -108,6 +131,7 @@ After deployment, OpenTofu outputs:
 - `dynamodb_table_name` - Name of the DynamoDB table
 - `dynamodb_table_arn` - ARN of the DynamoDB table
 - `eventbridge_rule_arn` - ARN of the EventBridge schedule rule
+- `github_actions_role_arn` - ARN of the IAM role for GitHub Actions
 
 ## Directory Structure
 
@@ -126,7 +150,8 @@ infrastructure/
 ├── dynamodb.tf         # DynamoDB table
 ├── eventbridge.tf      # EventBridge schedule
 ├── iam.tf              # IAM roles and policies
-└── ses.tf              # SES domain identity
+├── ses.tf              # SES domain identity
+└── github_oidc.tf      # GitHub Actions OIDC authentication
 ```
 
 ## Destroying
