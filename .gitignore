@@ -1,2 +1,11 @@
-vendor/
-sendgrid.env
+## File system
+.DS_Store
+desktop.ini
+
+## Tool
+.cargo
+.claude
+
+## Build
+/debug
+/target

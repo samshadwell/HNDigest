@@ -1,0 +1,15 @@
+Your daily Hacker News digest:
+<br />
+{% for post in posts %}
+<p>
+    {{ post.title }}
+    <br />
+    {{ post.points }} points - {% if let Some(url) = post.url %}
+    <a href="{{ url }}"> link </a> - {% endif %}
+    <a href="https://news.ycombinator.com/item?id={{ post.object_id }}">
+        comments
+    </a>
+</p>
+{% endfor %}
+<br />
+To unsubscribe, reply to this email.
