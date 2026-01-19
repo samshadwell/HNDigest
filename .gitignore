@@ -16,3 +16,6 @@ infrastructure/.terraform
 infrastructure/*.tfstate
 infrastructure/*.tfstate.backup
 infrastructure/terraform.tfvars
+infrastructure/bootstrap/.terraform
+infrastructure/bootstrap/*.tfstate
+infrastructure/bootstrap/*.tfstate.backup
