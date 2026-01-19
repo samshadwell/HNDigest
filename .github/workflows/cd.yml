@@ -56,8 +56,11 @@ jobs:
       - name: Plan
         id: plan
         run: |
-          EXIT_CODE=0
-          tofu plan -detailed-exitcode -out=tfplan > plan_output.txt 2>&1 || EXIT_CODE=$?
+          set +e
+          tofu plan -detailed-exitcode -out=tfplan > plan_output.txt 2>&1
+          EXIT_CODE=$?
+          set -e
+
           cat plan_output.txt
 
           if [ $EXIT_CODE -eq 0 ]; then
