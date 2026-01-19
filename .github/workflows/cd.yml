@@ -59,14 +59,17 @@ jobs:
           set +e
           tofu plan -detailed-exitcode -out=tfplan > plan_output.txt 2>&1
           EXIT_CODE=$?
+          echo "DEBUG: tofu plan exit code: $EXIT_CODE"
           set -e
 
           cat plan_output.txt
 
           if [ $EXIT_CODE -eq 0 ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "DEBUG: No changes detected (Exit Code $EXIT_CODE)"
           elif [ $EXIT_CODE -eq 2 ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "DEBUG: Changes detected (Exit Code $EXIT_CODE)"
           else
             echo "Plan failed with exit code $EXIT_CODE"
             exit 1
