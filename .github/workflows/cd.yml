@@ -49,6 +49,8 @@ jobs:
 
       - name: Install OpenTofu
         uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_wrapper: false
 
       - name: Initialize
         run: tofu init
