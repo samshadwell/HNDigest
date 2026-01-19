@@ -22,3 +22,8 @@ output "eventbridge_rule_arn" {
   description = "ARN of the EventBridge rule"
   value       = aws_cloudwatch_event_rule.daily_digest.arn
 }
+
+output "github_actions_role_arn" {
+  description = "ARN of the IAM role for GitHub Actions"
+  value       = aws_iam_role.github_actions.arn
+}
