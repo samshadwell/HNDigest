@@ -20,7 +20,10 @@ impl DigestMailer {
     pub fn new(ses_client: Client) -> Result<Self> {
         let from_address = env::var("EMAIL_FROM")
             .map_err(|_| anyhow!("EMAIL_FROM environment variable must be set"))?;
-        Ok(Self { ses_client, from_address })
+        Ok(Self {
+            ses_client,
+            from_address,
+        })
     }
 
     pub async fn send_mail(

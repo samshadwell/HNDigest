@@ -52,9 +52,8 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_ses::Client::new(&config);
-    let storage_adapter = Arc::new(
-        StorageAdapter::new(dynamodb_client).map_err(|e| Error::from(e.to_string()))?,
-    );
+    let storage_adapter =
+        Arc::new(StorageAdapter::new(dynamodb_client).map_err(|e| Error::from(e.to_string()))?);
     let mailer = Arc::new(DigestMailer::new(ses_client).map_err(|e| Error::from(e.to_string()))?);
     let snapshotter = PostSnapshotter::new(&storage_adapter);
 
