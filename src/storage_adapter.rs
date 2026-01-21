@@ -1,10 +1,10 @@
 use crate::types::Post;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
+use std::env;
 
-const TABLE: &str = "HNDigest";
 const SNAPSHOT_PARTITION_KEY: &str = "POSTS_SNAPSHOT";
 const DIGEST_PARTITION_KEY_PREFIX: &str = "DIGEST";
 const SUBSCRIBERS_PARTITION_KEY: &str = "SUBSCRIBERS";
@@ -12,11 +12,14 @@ const MODEL_TTL_DAYS: i64 = 30;
 
 pub struct StorageAdapter {
     client: Client,
+    table_name: String,
 }
 
 impl StorageAdapter {
-    pub fn new(client: Client) -> Self {
-        Self { client }
+    pub fn new(client: Client) -> Result<Self> {
+        let table_name = env::var("DYNAMODB_TABLE")
+            .map_err(|_| anyhow!("DYNAMODB_TABLE environment variable must be set"))?;
+        Ok(Self { client, table_name })
     }
 
     pub async fn snapshot_posts(
@@ -44,7 +47,7 @@ impl StorageAdapter {
 
         self.client
             .put_item()
-            .table_name(TABLE)
+            .table_name(&self.table_name)
             .set_item(Some(item))
             .send()
             .await
@@ -80,7 +83,7 @@ impl StorageAdapter {
 
         self.client
             .put_item()
-            .table_name(TABLE)
+            .table_name(&self.table_name)
             .set_item(Some(item))
             .send()
             .await
@@ -99,7 +102,7 @@ impl StorageAdapter {
         let output = self
             .client
             .get_item()
-            .table_name(TABLE)
+            .table_name(&self.table_name)
             .key("PK", AttributeValue::S(digest_partition_key(type_)))
             .key("SK", AttributeValue::S(datestamp))
             .send()
@@ -117,7 +120,7 @@ impl StorageAdapter {
         let output = self
             .client
             .get_item()
-            .table_name(TABLE)
+            .table_name(&self.table_name)
             .key(
                 "PK",
                 AttributeValue::S(SUBSCRIBERS_PARTITION_KEY.to_string()),

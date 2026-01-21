@@ -28,6 +28,7 @@ env:
   TF_VAR_create_github_oidc_provider: false
   TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
   TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
+  TF_VAR_ses_staging_from_email: ${{ vars.SES_STAGING_FROM_EMAIL }}
 
 jobs:
   plan:

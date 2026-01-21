@@ -1,11 +1,29 @@
+locals {
+  scheduled_environments = { for k, v in local.environments : k => v if v.has_schedule }
+}
+
 resource "aws_cloudwatch_event_rule" "daily_digest" {
-  name                = "${var.project_name}-trigger"
-  description         = "Triggers ${var.project_name} Lambda daily at 5:00 AM UTC"
+  for_each = local.scheduled_environments
+
+  name                = "${each.value.function_name}-trigger"
+  description         = "Triggers ${each.value.function_name} Lambda daily"
   schedule_expression = var.schedule_expression
 }
 
 resource "aws_cloudwatch_event_target" "lambda" {
-  rule      = aws_cloudwatch_event_rule.daily_digest.name
-  target_id = "${var.project_name}Lambda"
-  arn       = aws_lambda_function.hndigest.arn
+  for_each = local.scheduled_environments
+
+  rule      = aws_cloudwatch_event_rule.daily_digest[each.key].name
+  target_id = "${each.value.function_name}Lambda"
+  arn       = aws_lambda_function.hndigest[each.key].arn
+}
+
+resource "aws_lambda_permission" "eventbridge" {
+  for_each = local.scheduled_environments
+
+  statement_id  = "AllowEventBridgeInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.hndigest[each.key].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.daily_digest[each.key].arn
 }
