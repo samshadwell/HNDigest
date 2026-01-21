@@ -55,3 +55,15 @@ variable "create_github_oidc_provider" {
   type        = bool
   default     = true
 }
+
+variable "create_staging_environment" {
+  description = "Whether to create the staging environment resources"
+  type        = bool
+  default     = true
+}
+
+variable "ses_staging_from_email" {
+  description = "Email address to send staging digests from (defaults to ses_from_email if not set)"
+  type        = string
+  default     = null
+}

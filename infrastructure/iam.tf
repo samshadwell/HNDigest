@@ -1,6 +1,8 @@
-# IAM role for Lambda execution
+# IAM role for Lambda execution (per environment)
 resource "aws_iam_role" "lambda_exec" {
-  name = "${lower(var.project_name)}-lambda-role"
+  for_each = local.environments
+
+  name = each.value.role_name
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -18,14 +20,18 @@ resource "aws_iam_role" "lambda_exec" {
 
 # CloudWatch Logs policy
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
-  role       = aws_iam_role.lambda_exec.name
+  for_each = local.environments
+
+  role       = aws_iam_role.lambda_exec[each.key].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 # DynamoDB access policy
 resource "aws_iam_role_policy" "dynamodb_access" {
-  name = "${lower(var.project_name)}-dynamodb-access"
-  role = aws_iam_role.lambda_exec.id
+  for_each = local.environments
+
+  name = "${lower(var.project_name)}${each.value.name_suffix}-dynamodb-access"
+  role = aws_iam_role.lambda_exec[each.key].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -42,8 +48,8 @@ resource "aws_iam_role_policy" "dynamodb_access" {
           "dynamodb:Scan"
         ]
         Resource = [
-          aws_dynamodb_table.hndigest.arn,
-          "${aws_dynamodb_table.hndigest.arn}/index/*"
+          aws_dynamodb_table.hndigest[each.key].arn,
+          "${aws_dynamodb_table.hndigest[each.key].arn}/index/*"
         ]
       }
     ]
@@ -52,8 +58,10 @@ resource "aws_iam_role_policy" "dynamodb_access" {
 
 # SES sending policy
 resource "aws_iam_role_policy" "ses_access" {
-  name = "${lower(var.project_name)}-ses-access"
-  role = aws_iam_role.lambda_exec.id
+  for_each = local.environments
+
+  name = "${lower(var.project_name)}${each.value.name_suffix}-ses-access"
+  role = aws_iam_role.lambda_exec[each.key].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -67,7 +75,7 @@ resource "aws_iam_role_policy" "ses_access" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "ses:FromAddress" = var.ses_from_email
+            "ses:FromAddress" = each.value.from_email
           }
         }
       }

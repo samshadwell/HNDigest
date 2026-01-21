@@ -1,10 +1,10 @@
 resource "aws_dynamodb_table" "hndigest" {
-  name           = var.project_name
-  billing_mode   = "PROVISIONED"
-  read_capacity  = 5
-  write_capacity = 5
-  hash_key       = "PK"
-  range_key      = "SK"
+  for_each = local.environments
+
+  name         = each.value.table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"

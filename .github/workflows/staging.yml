@@ -1,0 +1,136 @@
+name: Deploy to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      invoke_after_deploy:
+        description: "Invoke Lambda after deploy"
+        type: boolean
+        default: false
+      show_logs:
+        description: "Fetch CloudWatch logs after invoke"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  LAMBDA_FUNCTION_NAME: HNDigest-staging
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Add musl target
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-unknown-linux-musl
+
+      - name: Create Lambda zip
+        run: |
+          cp target/x86_64-unknown-linux-musl/release/hndigest bootstrap
+          zip lambda.zip bootstrap
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-zip
+          path: lambda.zip
+          retention-days: 1
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-zip
+
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --zip-file fileb://lambda.zip
+
+      - name: Wait for function update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }}
+
+  invoke:
+    name: Invoke
+    needs: deploy
+    if: ${{ inputs.invoke_after_deploy }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Invoke Lambda
+        id: invoke
+        run: |
+          echo "Invoking ${{ env.LAMBDA_FUNCTION_NAME }}..."
+          aws lambda invoke \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --log-type Tail \
+            --query 'LogResult' \
+            --output text \
+            response.json | base64 --decode
+
+          echo ""
+          echo "Response:"
+          cat response.json
+
+      - name: Fetch CloudWatch logs
+        if: ${{ inputs.show_logs }}
+        run: |
+          echo "Fetching recent CloudWatch logs..."
+          LOG_GROUP="/aws/lambda/${{ env.LAMBDA_FUNCTION_NAME }}"
+
+          # Get the most recent log stream
+          STREAM=$(aws logs describe-log-streams \
+            --log-group-name "$LOG_GROUP" \
+            --order-by LastEventTime \
+            --descending \
+            --limit 1 \
+            --query 'logStreams[0].logStreamName' \
+            --output text)
+
+          echo "Log stream: $STREAM"
+          echo ""
+
+          # Get log events from the most recent stream
+          aws logs get-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$STREAM" \
+            --limit 100 \
+            --query 'events[*].message' \
+            --output text

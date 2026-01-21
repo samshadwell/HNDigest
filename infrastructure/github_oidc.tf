@@ -78,19 +78,19 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Sid      = "Lambda"
         Effect   = "Allow"
         Action   = "lambda:*"
-        Resource = aws_lambda_function.hndigest.arn
+        Resource = [for k, _ in local.environments : aws_lambda_function.hndigest[k].arn]
       },
       {
         Sid      = "DynamoDB"
         Effect   = "Allow"
         Action   = "dynamodb:*"
-        Resource = aws_dynamodb_table.hndigest.arn
+        Resource = [for k, _ in local.environments : aws_dynamodb_table.hndigest[k].arn]
       },
       {
         Sid      = "EventBridge"
         Effect   = "Allow"
         Action   = "events:*"
-        Resource = aws_cloudwatch_event_rule.daily_digest.arn
+        Resource = [for k, _ in local.scheduled_environments : aws_cloudwatch_event_rule.daily_digest[k].arn]
       },
       {
         Sid      = "SES"
@@ -119,10 +119,10 @@ resource "aws_iam_role_policy" "github_actions_infra" {
           "iam:TagRole",
           "iam:UntagRole"
         ]
-        Resource = [
-          aws_iam_role.lambda_exec.arn,
-          aws_iam_role.github_actions.arn
-        ]
+        Resource = concat(
+          [for k, env in local.environments : aws_iam_role.lambda_exec[k].arn],
+          [aws_iam_role.github_actions.arn]
+        )
       },
       {
         Sid      = "IAMOIDCProvider"
@@ -134,7 +134,7 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Sid      = "CloudWatchLogs"
         Effect   = "Allow"
         Action   = "logs:*"
-        Resource = "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest.function_name}:*"
+        Resource = [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest[k].function_name}:*"]
       }
     ]
   })

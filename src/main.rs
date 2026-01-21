@@ -20,6 +20,7 @@ use chrono::{NaiveTime, Utc};
 use lambda_runtime::{Error, LambdaEvent, service_fn};
 use log::{error, info};
 use serde_json::Value;
+use std::env;
 use std::sync::Arc;
 
 const SNAPSHOT_DAILY_HOUR: u32 = 5;
@@ -51,8 +52,10 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_ses::Client::new(&config);
-    let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client));
-    let mailer = Arc::new(DigestMailer::new(ses_client));
+    let storage_adapter = Arc::new(
+        StorageAdapter::new(dynamodb_client).map_err(|e| Error::from(e.to_string()))?,
+    );
+    let mailer = Arc::new(DigestMailer::new(ses_client).map_err(|e| Error::from(e.to_string()))?);
     let snapshotter = PostSnapshotter::new(&storage_adapter);
 
     info!("Snapshotting posts...");
@@ -129,7 +132,11 @@ async fn process_strategy(
 
     let tmpl = DigestTemplate { posts: &posts };
     let content = tmpl.render()?;
-    let subject = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
+    let base_subject = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
+    let subject = match env::var("SUBJECT_PREFIX") {
+        Ok(prefix) if !prefix.is_empty() => format!("{} {}", prefix, base_subject),
+        _ => base_subject,
+    };
 
     mailer.send_mail(&subject, &content, &subs).await?;
 
