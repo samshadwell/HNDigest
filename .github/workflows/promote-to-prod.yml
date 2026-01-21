@@ -1,0 +1,105 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      invoke_staging:
+        description: "Invoke staging Lambda after deploy"
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  STAGING_FUNCTION: HNDigest-staging
+  PROD_FUNCTION: HNDigest
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/build-lambda
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-zip
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.STAGING_FUNCTION }} \
+            --zip-file fileb://lambda.zip
+      - name: Wait for function update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.STAGING_FUNCTION }}
+
+  invoke-staging:
+    name: Invoke Staging
+    needs: deploy-staging
+    if: ${{ inputs.invoke_staging }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Invoke Lambda
+        run: |
+          echo "Invoking ${{ env.STAGING_FUNCTION }}..."
+          aws lambda invoke \
+            --function-name ${{ env.STAGING_FUNCTION }} \
+            --log-type Tail \
+            --query 'LogResult' \
+            --output text \
+            response.json | base64 --decode
+
+          echo ""
+          echo "Response:"
+          cat response.json
+
+  deploy-prod:
+    name: Deploy to Production
+    needs: [deploy-staging, invoke-staging]
+    if: ${{ always() && needs.deploy-staging.result == 'success' && (needs.invoke-staging.result == 'success' || needs.invoke-staging.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-zip
+      - name: Deploy to Lambda
+        run: |
+          echo "Deploying to ${{ env.PROD_FUNCTION }}..."
+          aws lambda update-function-code \
+            --function-name ${{ env.PROD_FUNCTION }} \
+            --zip-file fileb://lambda.zip
+      - name: Wait for function update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.PROD_FUNCTION }}
+
+          echo "Production Lambda updated successfully"
