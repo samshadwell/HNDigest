@@ -1,0 +1,36 @@
+name: Build Lambda
+description: Build the Rust Lambda and upload as artifact
+
+runs:
+  using: composite
+  steps:
+    - name: Install cross-compilation tools
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-unknown-linux-musl
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2.8.2
+
+    - name: Build release binary
+      shell: bash
+      run: cargo build --release --target x86_64-unknown-linux-musl
+
+    - name: Create Lambda zip
+      shell: bash
+      run: |
+        cp target/x86_64-unknown-linux-musl/release/hndigest bootstrap
+        zip lambda.zip bootstrap
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: lambda-zip
+        path: lambda.zip
+        retention-days: 1

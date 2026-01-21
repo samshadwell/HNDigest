@@ -10,3 +10,21 @@ updates:
         update-types:
           - minor
           - patch
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
+  - package-ecosystem: "opentofu"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      providers:
+        applies-to: version-updates
+        patterns:
+          - "*"
