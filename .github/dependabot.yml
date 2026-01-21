@@ -20,7 +20,7 @@ updates:
         patterns:
           - "*"
   - package-ecosystem: "opentofu"
-    directory: "/"
+    directory: "/infrastructure"
     schedule:
       interval: "monthly"
     groups:
