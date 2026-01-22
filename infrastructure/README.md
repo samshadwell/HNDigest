@@ -117,7 +117,7 @@ Once configured:
 | `project_name` | Project name used for resource naming | `HNDigest` |
 | `lambda_memory_size` | Lambda memory in MB | `256` |
 | `lambda_timeout` | Lambda timeout in seconds | `60` |
-| `schedule_expression` | EventBridge cron expression | `cron(0 5 * * ? *)` |
+| `run_hour_utc` | Hour (0-23 UTC) to run the daily digest | `5` |
 | `github_repository` | GitHub repo for OIDC trust (owner/repo) | `samshadwell/HNDigest` |
 | `state_bucket_name` | S3 bucket name for OpenTofu state | `hndigest-tfstate` |
 | `create_github_oidc_provider` | Create GitHub OIDC provider (false if exists) | `true` |

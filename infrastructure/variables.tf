@@ -22,10 +22,10 @@ variable "lambda_timeout" {
   default     = 15
 }
 
-variable "schedule_expression" {
-  description = "EventBridge schedule expression for the digest trigger"
-  type        = string
-  default     = "cron(0 5 * * ? *)" # Daily at 5:00 AM UTC
+variable "run_hour_utc" {
+  description = "Hour (0-23 UTC) to run the daily digest"
+  type        = number
+  default     = 5
 }
 
 variable "ses_from_email" {

@@ -1,9 +1,8 @@
 use crate::types::Post;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
-use std::env;
 
 const SNAPSHOT_PARTITION_KEY: &str = "POSTS_SNAPSHOT";
 const DIGEST_PARTITION_KEY_PREFIX: &str = "DIGEST";
@@ -16,10 +15,8 @@ pub struct StorageAdapter {
 }
 
 impl StorageAdapter {
-    pub fn new(client: Client) -> Result<Self> {
-        let table_name = env::var("DYNAMODB_TABLE")
-            .map_err(|_| anyhow!("DYNAMODB_TABLE environment variable must be set"))?;
-        Ok(Self { client, table_name })
+    pub fn new(client: Client, table_name: String) -> Self {
+        Self { client, table_name }
     }
 
     pub async fn snapshot_posts(

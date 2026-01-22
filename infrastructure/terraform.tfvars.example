@@ -3,8 +3,8 @@ ses_from_email     = "hndigest@yourdomain.com"
 ses_reply_to_email = "hello@yourdomain.com"
 
 # Optional overrides (uncomment to customize):
-# project_name       = "HNDigest"
-# aws_region         = "us-west-2"
-# lambda_memory_size = 256
-# lambda_timeout     = 60
-# schedule_expression = "cron(0 5 * * ? *)"  # Daily at 5:00 AM UTC
+# project_name        = "HNDigest"
+# aws_region          = "us-west-2"
+# lambda_memory_size  = 256
+# lambda_timeout      = 60
+# run_hour_utc       = 5                      # Daily at 5:00 AM UTC

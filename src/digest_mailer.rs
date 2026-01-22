@@ -3,27 +3,25 @@ use aws_sdk_ses::{
     types::{Body, Content, Destination, Message},
 };
 
-use anyhow::{Context, Result, anyhow};
-use std::env;
+use anyhow::{Context, Result};
 use tracing::info;
 
 const SES_RECIPIENT_LIMIT: usize = 50;
-const REPLY_TO: &str = "hi@samshadwell.com";
 const ENCODING: &str = "UTF-8";
 
 pub struct DigestMailer {
     ses_client: Client,
     from_address: String,
+    reply_to_address: String,
 }
 
 impl DigestMailer {
-    pub fn new(ses_client: Client) -> Result<Self> {
-        let from_address = env::var("EMAIL_FROM")
-            .map_err(|_| anyhow!("EMAIL_FROM environment variable must be set"))?;
-        Ok(Self {
+    pub fn new(ses_client: Client, from_address: String, reply_to_address: String) -> Self {
+        Self {
             ses_client,
             from_address,
-        })
+            reply_to_address,
+        }
     }
 
     pub async fn send_mail(
@@ -53,8 +51,8 @@ impl DigestMailer {
                 .send_email()
                 .source(&self.from_address)
                 .destination(dest)
-                .reply_to_addresses(REPLY_TO)
-                .return_path(REPLY_TO)
+                .reply_to_addresses(&self.reply_to_address)
+                .return_path(&self.reply_to_address)
                 .message(message)
                 .send()
                 .await
