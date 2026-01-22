@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+
+cargo fmt --all -- --check
+
+cd infrastructure
+tofu fmt -check -recursive
