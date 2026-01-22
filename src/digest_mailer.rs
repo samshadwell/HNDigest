@@ -4,8 +4,8 @@ use aws_sdk_ses::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use log::info;
 use std::env;
+use tracing::info;
 
 const SES_RECIPIENT_LIMIT: usize = 50;
 const REPLY_TO: &str = "hi@samshadwell.com";
@@ -33,7 +33,7 @@ impl DigestMailer {
         recipients: &[String],
     ) -> Result<()> {
         for chunk in recipients.chunks(SES_RECIPIENT_LIMIT) {
-            info!("Sending mail via SES to {} recipients...", chunk.len());
+            info!(recipients = chunk.len(), "Sending mail via SES");
 
             let dest = Destination::builder()
                 .set_bcc_addresses(Some(chunk.to_vec()))
@@ -60,7 +60,7 @@ impl DigestMailer {
                 .await
                 .context("Failed to send email via SES")?;
 
-            info!("Success! message_id={:?}", response.message_id());
+            info!(message_id = ?response.message_id(), "Email sent successfully");
         }
 
         Ok(())

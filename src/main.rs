@@ -18,10 +18,10 @@ use askama::Template;
 use aws_config::BehaviorVersion;
 use chrono::{NaiveTime, Utc};
 use lambda_runtime::{Error, LambdaEvent, service_fn};
-use log::{error, info};
 use serde_json::Value;
 use std::env;
 use std::sync::Arc;
+use tracing::{Instrument, error, info, info_span};
 
 const SNAPSHOT_DAILY_HOUR: u32 = 5;
 
@@ -33,7 +33,10 @@ struct DigestTemplate<'a> {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .json()
+        .init();
 
     lambda_runtime::run(service_fn(handler)).await?;
     Ok(())
@@ -80,10 +83,14 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
             let storage_adapter = Arc::clone(&storage_adapter);
             let mailer = Arc::clone(&mailer);
             let all_posts = Arc::clone(&all_posts);
+            let span = info_span!("strategy", name = %strategy);
 
-            tokio::spawn(async move {
-                process_strategy(strategy, date, storage_adapter, &mailer, &all_posts).await
-            })
+            tokio::spawn(
+                async move {
+                    process_strategy(strategy, date, storage_adapter, &mailer, &all_posts).await
+                }
+                .instrument(span),
+            )
         })
         .collect();
 
@@ -91,8 +98,8 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     for res in results {
         match res {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => error!("Strategy execution failed: {}", e),
-            Err(e) => error!("Task panicked: {}", e),
+            Ok(Err(e)) => error!(error = %e, "Strategy execution failed"),
+            Err(e) => error!(error = %e, "Task panicked"),
         }
     }
 
@@ -107,17 +114,17 @@ async fn process_strategy(
     mailer: &DigestMailer,
     all_posts: &[Post],
 ) -> anyhow::Result<()> {
-    info!("Processing strategy: {}", strategy);
+    info!("Processing strategy");
     let digest_builder = DigestBuilder::new(Arc::clone(&storage_adapter));
 
     let posts = digest_builder
         .build_digest(strategy, date, all_posts)
         .await?;
 
-    info!("Selected {} posts for digest {}", posts.len(), strategy);
+    info!(posts = posts.len(), "Selected posts for digest");
 
     if posts.is_empty() {
-        info!("No posts for strategy {}. Skipping.", strategy);
+        info!("No posts for strategy, skipping");
         return Ok(());
     }
 
@@ -125,7 +132,7 @@ async fn process_strategy(
     let subscribers = storage_adapter.fetch_subscribers(&strategy_name).await?;
 
     let Some(subs) = subscribers.filter(|s| !s.is_empty()) else {
-        info!("No subscribers for strategy {}", strategy);
+        info!("No subscribers for strategy");
         return Ok(());
     };
 
