@@ -23,8 +23,6 @@ use std::env;
 use std::sync::Arc;
 use tracing::{Instrument, error, info, info_span};
 
-const SNAPSHOT_DAILY_HOUR: u32 = 5;
-
 #[derive(Template)]
 #[template(path = "digest.html")]
 struct DigestTemplate<'a> {
@@ -45,9 +43,22 @@ async fn main() -> Result<(), Error> {
 async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     info!("Starting HNDigest handler...");
 
+    // Read all configuration from environment variables
+    let run_hour_utc: u32 = env::var("RUN_HOUR_UTC")
+        .map_err(|_| Error::from("RUN_HOUR_UTC environment variable must be set"))?
+        .parse()
+        .map_err(|_| Error::from("RUN_HOUR_UTC must be a valid number"))?;
+    let dynamodb_table = env::var("DYNAMODB_TABLE")
+        .map_err(|_| Error::from("DYNAMODB_TABLE environment variable must be set"))?;
+    let email_from = env::var("EMAIL_FROM")
+        .map_err(|_| Error::from("EMAIL_FROM environment variable must be set"))?;
+    let email_reply_to = env::var("EMAIL_REPLY_TO")
+        .map_err(|_| Error::from("EMAIL_REPLY_TO environment variable must be set"))?;
+    let subject_prefix = env::var("SUBJECT_PREFIX").ok().filter(|s| !s.is_empty());
+
     let date = Utc::now()
         .date_naive()
-        .and_time(NaiveTime::from_hms_opt(SNAPSHOT_DAILY_HOUR, 0, 0).unwrap())
+        .and_time(NaiveTime::from_hms_opt(run_hour_utc, 0, 0).unwrap())
         .and_utc();
 
     info!("Processing for date: {}", date);
@@ -55,9 +66,8 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_ses::Client::new(&config);
-    let storage_adapter =
-        Arc::new(StorageAdapter::new(dynamodb_client).map_err(|e| Error::from(e.to_string()))?);
-    let mailer = Arc::new(DigestMailer::new(ses_client).map_err(|e| Error::from(e.to_string()))?);
+    let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
+    let mailer = Arc::new(DigestMailer::new(ses_client, email_from, email_reply_to));
     let snapshotter = PostSnapshotter::new(&storage_adapter);
 
     info!("Snapshotting posts...");
@@ -83,11 +93,20 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
             let storage_adapter = Arc::clone(&storage_adapter);
             let mailer = Arc::clone(&mailer);
             let all_posts = Arc::clone(&all_posts);
+            let subject_prefix = subject_prefix.clone();
             let span = info_span!("strategy", name = %strategy);
 
             tokio::spawn(
                 async move {
-                    process_strategy(strategy, date, storage_adapter, &mailer, &all_posts).await
+                    process_strategy(
+                        strategy,
+                        date,
+                        storage_adapter,
+                        &mailer,
+                        &all_posts,
+                        subject_prefix.as_deref(),
+                    )
+                    .await
                 }
                 .instrument(span),
             )
@@ -113,6 +132,7 @@ async fn process_strategy(
     storage_adapter: Arc<StorageAdapter>,
     mailer: &DigestMailer,
     all_posts: &[Post],
+    subject_prefix: Option<&str>,
 ) -> anyhow::Result<()> {
     info!("Processing strategy");
     let digest_builder = DigestBuilder::new(Arc::clone(&storage_adapter));
@@ -139,9 +159,9 @@ async fn process_strategy(
     let tmpl = DigestTemplate { posts: &posts };
     let content = tmpl.render()?;
     let base_subject = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
-    let subject = match env::var("SUBJECT_PREFIX") {
-        Ok(prefix) if !prefix.is_empty() => format!("{} {}", prefix, base_subject),
-        _ => base_subject,
+    let subject = match subject_prefix {
+        Some(prefix) => format!("{} {}", prefix, base_subject),
+        None => base_subject,
     };
 
     mailer.send_mail(&subject, &content, &subs).await?;

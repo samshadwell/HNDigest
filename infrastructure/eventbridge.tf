@@ -7,7 +7,7 @@ resource "aws_cloudwatch_event_rule" "daily_digest" {
 
   name                = "${each.value.function_name}-trigger"
   description         = "Triggers ${each.value.function_name} Lambda daily"
-  schedule_expression = var.schedule_expression
+  schedule_expression = "cron(0 ${var.run_hour_utc} * * ? *)"
 }
 
 resource "aws_cloudwatch_event_target" "lambda" {

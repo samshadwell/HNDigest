@@ -11,6 +11,7 @@ locals {
         function_name  = var.project_name
         role_name      = "${lower(var.project_name)}-lambda-role"
         from_email     = var.ses_from_email
+        reply_to_email = var.ses_reply_to_email
         subject_prefix = ""
         # Prod gets the EventBridge schedule
         has_schedule = true
@@ -23,6 +24,7 @@ locals {
         function_name  = "${var.project_name}-staging"
         role_name      = "${lower(var.project_name)}-staging-lambda-role"
         from_email     = coalesce(var.ses_staging_from_email, var.ses_from_email)
+        reply_to_email = var.ses_reply_to_email
         subject_prefix = "[STAGING]"
         # Staging is triggered manually, no schedule
         has_schedule = false

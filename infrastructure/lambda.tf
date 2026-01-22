@@ -30,6 +30,8 @@ resource "aws_lambda_function" "hndigest" {
         RUST_LOG       = "info"
         DYNAMODB_TABLE = each.value.table_name
         EMAIL_FROM     = each.value.from_email
+        EMAIL_REPLY_TO = each.value.reply_to_email
+        RUN_HOUR_UTC   = tostring(var.run_hour_utc)
       },
       each.value.subject_prefix != "" ? { SUBJECT_PREFIX = each.value.subject_prefix } : {}
     )
