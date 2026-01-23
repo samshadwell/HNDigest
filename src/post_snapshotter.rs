@@ -1,6 +1,6 @@
-use crate::configuration::{POINT_THRESHOLD_VALUES, TOP_N_VALUES};
 use crate::post_fetcher::PostFetcher;
 use crate::storage_adapter::StorageAdapter;
+use crate::strategies::DigestStrategy;
 use crate::types::Post;
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
@@ -22,8 +22,8 @@ impl<'a> PostSnapshotter<'a> {
     }
 
     pub async fn snapshot(&self, date: DateTime<Utc>) -> Result<HashMap<String, Post>> {
-        let max_top_n = TOP_N_VALUES.iter().copied().max().unwrap_or(50);
-        let min_points = POINT_THRESHOLD_VALUES.iter().copied().min().unwrap_or(100);
+        let max_top_n = DigestStrategy::max_top_n();
+        let min_points = DigestStrategy::min_point_threshold();
 
         let since = (date - Duration::days(LOOKBACK_DAYS)).timestamp();
 

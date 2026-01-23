@@ -1,27 +1,21 @@
-mod configuration;
-mod digest_builder;
-mod digest_mailer;
-mod post_fetcher;
-mod post_snapshotter;
-mod storage_adapter;
-mod strategies;
-mod types;
-
-use crate::configuration::{POINT_THRESHOLD_VALUES, TOP_N_VALUES};
-use crate::digest_builder::DigestBuilder;
-use crate::digest_mailer::DigestMailer;
-use crate::post_snapshotter::PostSnapshotter;
-use crate::storage_adapter::StorageAdapter;
-use crate::strategies::DigestStrategy;
-use crate::types::Post;
 use askama::Template;
 use aws_config::BehaviorVersion;
-use chrono::{NaiveTime, Utc};
+use chrono::{DateTime, NaiveTime, Utc};
+use futures::stream::{self, StreamExt};
+use hndigest::digest_builder::DigestBuilder;
+use hndigest::digest_mailer::DigestMailer;
+use hndigest::post_snapshotter::PostSnapshotter;
+use hndigest::storage_adapter::StorageAdapter;
+use hndigest::strategies::DigestStrategy;
+use hndigest::types::Post;
 use lambda_runtime::{Error, LambdaEvent, service_fn};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
-use tracing::{Instrument, error, info, info_span};
+use tracing::{error, info, warn};
+
+const MAX_CONCURRENT_EMAILS: usize = 10;
 
 #[derive(Template)]
 #[template(path = "digest.html")]
@@ -43,7 +37,7 @@ async fn main() -> Result<(), Error> {
 async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     info!("Starting HNDigest handler...");
 
-    // Read all configuration from environment variables
+    // Read configuration from environment variables
     let run_hour_utc: u32 = env::var("RUN_HOUR_UTC")
         .map_err(|_| Error::from("RUN_HOUR_UTC environment variable must be set"))?
         .parse()
@@ -70,55 +64,115 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let mailer = Arc::new(DigestMailer::new(ses_client, email_from, email_reply_to));
     let snapshotter = PostSnapshotter::new(&storage_adapter);
 
+    // Step 1: Snapshot all posts
     info!("Snapshotting posts...");
     let all_posts_map = snapshotter
         .snapshot(date)
         .await
         .map_err(|e| Error::from(e.to_string()))?;
-    let all_posts: Arc<Vec<Post>> = Arc::new(all_posts_map.into_values().collect());
+    let all_posts: Vec<Post> = all_posts_map.into_values().collect();
+    info!(posts = all_posts.len(), "Fetched posts");
 
-    let strategies: Vec<DigestStrategy> = TOP_N_VALUES
-        .iter()
-        .map(|&n| DigestStrategy::TopN(n))
-        .chain(
-            POINT_THRESHOLD_VALUES
-                .iter()
-                .map(|&t| DigestStrategy::OverPointThreshold(t)),
-        )
-        .collect();
+    // Step 2: Build digests for all strategies in parallel
+    let strategies = DigestStrategy::all();
 
-    let handles: Vec<_> = strategies
+    info!(
+        strategies = strategies.len(),
+        "Building digests for all strategies"
+    );
+
+    let digests_by_strategy =
+        build_all_digests(&strategies, date, &storage_adapter, &all_posts).await?;
+
+    info!(
+        strategies_with_posts = digests_by_strategy.len(),
+        "Built digests"
+    );
+
+    // Step 3: Fetch all subscribers
+    info!("Fetching subscribers...");
+    let subscribers = storage_adapter
+        .get_all_subscribers()
+        .await
+        .map_err(|e| Error::from(e.to_string()))?;
+
+    // Filter to verified subscribers only
+    let verified_subscribers: Vec<_> = subscribers
         .into_iter()
-        .map(|strategy| {
-            let storage_adapter = Arc::clone(&storage_adapter);
-            let mailer = Arc::clone(&mailer);
-            let all_posts = Arc::clone(&all_posts);
-            let subject_prefix = subject_prefix.clone();
-            let span = info_span!("strategy", name = %strategy);
-
-            tokio::spawn(
-                async move {
-                    process_strategy(
-                        strategy,
-                        date,
-                        storage_adapter,
-                        &mailer,
-                        &all_posts,
-                        subject_prefix.as_deref(),
-                    )
-                    .await
-                }
-                .instrument(span),
-            )
-        })
+        .filter(|s| s.verified_at.is_some())
         .collect();
 
-    let results = futures::future::join_all(handles).await;
-    for res in results {
-        match res {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => error!(error = %e, "Strategy execution failed"),
-            Err(e) => error!(error = %e, "Task panicked"),
+    info!(
+        subscribers = verified_subscribers.len(),
+        "Found verified subscribers"
+    );
+
+    if verified_subscribers.is_empty() {
+        info!("No subscribers to send to");
+        return Ok(());
+    }
+
+    // Step 4: Send emails to each subscriber (max 10 concurrent)
+    let subject = {
+        let base = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
+        match subject_prefix {
+            Some(p) => format!("{} {}", p, base),
+            None => base,
+        }
+    };
+
+    let send_results: Vec<_> = stream::iter(verified_subscribers)
+        .map(|subscriber| {
+            let digests = &digests_by_strategy;
+            let mailer = &mailer;
+            let subject = &subject;
+
+            async move {
+                let posts = match digests.get(&subscriber.strategy) {
+                    Some(posts) if !posts.is_empty() => posts,
+                    _ => {
+                        info!(
+                            email = subscriber.email,
+                            strategy = %subscriber.strategy,
+                            "No posts for subscriber's strategy, skipping"
+                        );
+                        return Ok(());
+                    }
+                };
+
+                let tmpl = DigestTemplate { posts };
+                let content = match tmpl.render() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        warn!(
+                            email = subscriber.email,
+                            error = %e,
+                            "Failed to render template"
+                        );
+                        return Err(anyhow::anyhow!("Template render failed: {}", e));
+                    }
+                };
+
+                mailer.send_mail(subject, &content, &subscriber.email).await
+            }
+        })
+        .buffer_unordered(MAX_CONCURRENT_EMAILS)
+        .collect()
+        .await;
+
+    // Log results
+    let success_count = send_results.iter().filter(|r| r.is_ok()).count();
+    let failure_count = send_results.iter().filter(|r| r.is_err()).count();
+
+    info!(
+        success = success_count,
+        failures = failure_count,
+        "Finished sending emails"
+    );
+
+    for result in &send_results {
+        if let Err(e) = result {
+            error!(error = %e, "Email send failed");
         }
     }
 
@@ -126,45 +180,44 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     Ok(())
 }
 
-async fn process_strategy(
-    strategy: DigestStrategy,
-    date: chrono::DateTime<Utc>,
-    storage_adapter: Arc<StorageAdapter>,
-    mailer: &DigestMailer,
+/// Build digests for all strategies in parallel.
+/// Returns a map from strategy to the posts for that digest.
+async fn build_all_digests(
+    strategies: &[DigestStrategy],
+    date: DateTime<Utc>,
+    storage_adapter: &Arc<StorageAdapter>,
     all_posts: &[Post],
-    subject_prefix: Option<&str>,
-) -> anyhow::Result<()> {
-    info!("Processing strategy");
-    let digest_builder = DigestBuilder::new(Arc::clone(&storage_adapter));
+) -> Result<HashMap<DigestStrategy, Vec<Post>>, Error> {
+    let handles: Vec<_> = strategies
+        .iter()
+        .map(|&strategy| {
+            let storage_adapter = Arc::clone(storage_adapter);
+            let posts = all_posts.to_vec();
 
-    let posts = digest_builder
-        .build_digest(strategy, date, all_posts)
-        .await?;
+            async move {
+                let digest_builder = DigestBuilder::new(storage_adapter);
+                let digest_posts = digest_builder.build_digest(strategy, date, &posts).await?;
 
-    info!(posts = posts.len(), "Selected posts for digest");
+                Ok::<_, anyhow::Error>((strategy, digest_posts))
+            }
+        })
+        .collect();
 
-    if posts.is_empty() {
-        info!("No posts for strategy, skipping");
-        return Ok(());
+    let results = futures::future::join_all(handles).await;
+
+    let mut digests = HashMap::new();
+    for result in results {
+        match result {
+            Ok((strategy, posts)) => {
+                if !posts.is_empty() {
+                    digests.insert(strategy, posts);
+                }
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to build digest for strategy");
+            }
+        }
     }
 
-    let strategy_name = strategy.to_string();
-    let subscribers = storage_adapter.fetch_subscribers(&strategy_name).await?;
-
-    let Some(subs) = subscribers.filter(|s| !s.is_empty()) else {
-        info!("No subscribers for strategy");
-        return Ok(());
-    };
-
-    let tmpl = DigestTemplate { posts: &posts };
-    let content = tmpl.render()?;
-    let base_subject = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
-    let subject = match subject_prefix {
-        Some(prefix) => format!("{} {}", prefix, base_subject),
-        None => base_subject,
-    };
-
-    mailer.send_mail(&subject, &content, &subs).await?;
-
-    Ok(())
+    Ok(digests)
 }
