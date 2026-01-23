@@ -1,12 +1,15 @@
-use crate::types::Post;
+use crate::strategies::DigestStrategy;
+use crate::types::{Post, Subscriber};
 use anyhow::{Context, Result};
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 const SNAPSHOT_PARTITION_KEY: &str = "POSTS_SNAPSHOT";
 const DIGEST_PARTITION_KEY_PREFIX: &str = "DIGEST";
 const SUBSCRIBERS_PARTITION_KEY: &str = "SUBSCRIBERS";
+const SUBSCRIBER_PARTITION_KEY: &str = "SUBSCRIBER";
 const MODEL_TTL_DAYS: i64 = 30;
 
 pub struct StorageAdapter {
@@ -113,6 +116,8 @@ impl StorageAdapter {
             .transpose()
     }
 
+    /// Fetch subscribers using the old model (PK="SUBSCRIBERS", SK=strategy).
+    /// This is kept for backwards compatibility during migration.
     pub async fn fetch_subscribers(&self, type_: &str) -> Result<Option<Vec<String>>> {
         let output = self
             .client
@@ -132,6 +137,127 @@ impl StorageAdapter {
             .and_then(|item| item.get("emails").cloned())
             .map(|emails_av| as_string_list(&emails_av))
             .transpose()
+    }
+
+    // ========== New Subscriber Model Methods ==========
+
+    /// Get a single subscriber by email address.
+    /// Returns None if the subscriber doesn't exist.
+    pub async fn get_subscriber(&self, email: &str) -> Result<Option<Subscriber>> {
+        let output = self
+            .client
+            .get_item()
+            .table_name(&self.table_name)
+            .key(
+                "PK",
+                AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
+            )
+            .key("SK", AttributeValue::S(email.to_lowercase()))
+            .send()
+            .await
+            .context("Failed to get subscriber")?;
+
+        output.item.map(subscriber_from_item).transpose()
+    }
+
+    /// Get all subscribers (scans the table for SUBSCRIBER records).
+    pub async fn get_all_subscribers(&self) -> Result<Vec<Subscriber>> {
+        let mut subscribers = Vec::new();
+        let mut exclusive_start_key = None;
+
+        loop {
+            let mut request = self
+                .client
+                .query()
+                .table_name(&self.table_name)
+                .key_condition_expression("PK = :pk")
+                .expression_attribute_values(
+                    ":pk",
+                    AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
+                );
+
+            if let Some(start_key) = exclusive_start_key {
+                request = request.set_exclusive_start_key(Some(start_key));
+            }
+
+            let output = request
+                .send()
+                .await
+                .context("Failed to query subscribers")?;
+
+            if let Some(items) = output.items {
+                for item in items {
+                    subscribers.push(subscriber_from_item(item)?);
+                }
+            }
+
+            exclusive_start_key = output.last_evaluated_key;
+            if exclusive_start_key.is_none() {
+                break;
+            }
+        }
+
+        Ok(subscribers)
+    }
+
+    /// Create or update a subscriber record.
+    pub async fn set_subscriber(&self, subscriber: &Subscriber) -> Result<()> {
+        let mut item = HashMap::from([
+            (
+                "PK".to_string(),
+                AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
+            ),
+            (
+                "SK".to_string(),
+                AttributeValue::S(subscriber.email.to_lowercase()),
+            ),
+            (
+                "email".to_string(),
+                AttributeValue::S(subscriber.email.to_lowercase()),
+            ),
+            (
+                "strategy".to_string(),
+                AttributeValue::S(subscriber.strategy.to_string()),
+            ),
+            (
+                "subscribed_at".to_string(),
+                AttributeValue::S(subscriber.subscribed_at.to_rfc3339()),
+            ),
+        ]);
+
+        if let Some(verified_at) = subscriber.verified_at {
+            item.insert(
+                "verified_at".to_string(),
+                AttributeValue::S(verified_at.to_rfc3339()),
+            );
+        }
+
+        self.client
+            .put_item()
+            .table_name(&self.table_name)
+            .set_item(Some(item))
+            .send()
+            .await
+            .context("Failed to set subscriber")?;
+
+        Ok(())
+    }
+
+    /// Remove a subscriber by email address.
+    pub async fn remove_subscriber(&self, email: &str) -> Result<()> {
+        self.client
+            .delete_item()
+            .table_name(&self.table_name)
+            .key(
+                "PK",
+                AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
+            )
+            .key("SK", AttributeValue::S(email.to_lowercase()))
+            .send()
+            .await
+            .context("Failed to remove subscriber")?;
+
+        Ok(())
     }
 }
 
@@ -211,5 +337,41 @@ fn av_to_json(av: &AttributeValue) -> Result<serde_json::Value> {
                 .collect::<Result<_>>()?,
         ),
         _ => serde_json::Value::Null, // Ignore binary/set types
+    })
+}
+
+/// Convert a DynamoDB item to a Subscriber struct.
+fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscriber> {
+    let email = item
+        .get("email")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing email field"))?
+        .clone();
+
+    let strategy_str = item
+        .get("strategy")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing strategy field"))?;
+    let strategy = DigestStrategy::from_str(strategy_str).context("Invalid strategy value")?;
+
+    let subscribed_at = item
+        .get("subscribed_at")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing subscribed_at field"))?
+        .parse::<DateTime<Utc>>()
+        .context("Invalid subscribed_at timestamp")?;
+
+    let verified_at = item
+        .get("verified_at")
+        .and_then(|v| v.as_s().ok())
+        .map(|s| s.parse::<DateTime<Utc>>())
+        .transpose()
+        .context("Invalid verified_at timestamp")?;
+
+    Ok(Subscriber {
+        email,
+        strategy,
+        subscribed_at,
+        verified_at,
     })
 }
