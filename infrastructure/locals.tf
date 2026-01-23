@@ -2,6 +2,9 @@ locals {
   # Derive SES domain from the from_email address
   ses_domain = split("@", var.ses_from_email)[1]
 
+  # Staging is enabled if a staging domain is configured
+  create_staging = var.landing_page_staging_domain != null
+
   # Environment definitions - each environment gets its own Lambda, DynamoDB, and IAM role
   environments = merge(
     {
@@ -17,7 +20,7 @@ locals {
         has_schedule = true
       }
     },
-    var.create_staging_environment ? {
+    local.create_staging ? {
       staging = {
         name_suffix    = "-staging"
         table_name     = "${var.project_name}-staging"
