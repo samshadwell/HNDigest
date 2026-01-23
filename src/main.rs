@@ -2,7 +2,6 @@ use askama::Template;
 use aws_config::BehaviorVersion;
 use chrono::{DateTime, NaiveTime, Utc};
 use futures::stream::{self, StreamExt};
-use hndigest::configuration::{POINT_THRESHOLD_VALUES, TOP_N_VALUES};
 use hndigest::digest_builder::DigestBuilder;
 use hndigest::digest_mailer::DigestMailer;
 use hndigest::post_snapshotter::PostSnapshotter;
@@ -75,15 +74,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     info!(posts = all_posts.len(), "Fetched posts");
 
     // Step 2: Build digests for all strategies in parallel
-    let strategies: Vec<DigestStrategy> = TOP_N_VALUES
-        .iter()
-        .map(|&n| DigestStrategy::TopN(n))
-        .chain(
-            POINT_THRESHOLD_VALUES
-                .iter()
-                .map(|&t| DigestStrategy::OverPointThreshold(t)),
-        )
-        .collect();
+    let strategies = DigestStrategy::all();
 
     info!(
         strategies = strategies.len(),

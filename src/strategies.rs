@@ -1,13 +1,51 @@
-use crate::configuration::{POINT_THRESHOLD_VALUES, TOP_N_VALUES};
 use crate::types::Post;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::str::FromStr;
 
+const TOP_N_VALUES: &[usize] = &[10, 20, 50];
+const POINT_THRESHOLD_VALUES: &[i32] = &[500, 250, 100];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DigestStrategy {
     TopN(usize),
     OverPointThreshold(i32),
+}
+
+impl DigestStrategy {
+    /// Returns all configured digest strategies.
+    pub fn all() -> Vec<DigestStrategy> {
+        TOP_N_VALUES
+            .iter()
+            .map(|&n| DigestStrategy::TopN(n))
+            .chain(
+                POINT_THRESHOLD_VALUES
+                    .iter()
+                    .map(|&t| DigestStrategy::OverPointThreshold(t)),
+            )
+            .collect()
+    }
+
+    /// Returns the maximum TopN value across all strategies.
+    pub fn max_top_n() -> usize {
+        TOP_N_VALUES.iter().copied().max().unwrap_or(50)
+    }
+
+    /// Returns the minimum point threshold across all strategies.
+    pub fn min_point_threshold() -> i32 {
+        POINT_THRESHOLD_VALUES.iter().copied().min().unwrap_or(100)
+    }
+
+    pub fn select(&self, posts: &[Post]) -> Vec<Post> {
+        match self {
+            Self::TopN(n) => posts.iter().take(*n).cloned().collect(),
+            Self::OverPointThreshold(threshold) => posts
+                .iter()
+                .filter(|p| p.points >= *threshold)
+                .cloned()
+                .collect(),
+        }
+    }
 }
 
 impl FromStr for DigestStrategy {
@@ -56,19 +94,6 @@ impl<'de> Deserialize<'de> for DigestStrategy {
     {
         let s = String::deserialize(deserializer)?;
         DigestStrategy::from_str(&s).map_err(serde::de::Error::custom)
-    }
-}
-
-impl DigestStrategy {
-    pub fn select(&self, posts: &[Post]) -> Vec<Post> {
-        match self {
-            Self::TopN(n) => posts.iter().take(*n).cloned().collect(),
-            Self::OverPointThreshold(threshold) => posts
-                .iter()
-                .filter(|p| p.points >= *threshold)
-                .cloned()
-                .collect(),
-        }
     }
 }
 
@@ -153,5 +178,28 @@ mod tests {
             DigestStrategy::OverPointThreshold(500).to_string(),
             "POINT_THRESHOLD#500"
         );
+    }
+
+    #[test]
+    fn test_all_strategies() {
+        let all = DigestStrategy::all();
+        assert_eq!(all.len(), TOP_N_VALUES.len() + POINT_THRESHOLD_VALUES.len());
+
+        for &n in TOP_N_VALUES {
+            assert!(all.contains(&DigestStrategy::TopN(n)));
+        }
+        for &t in POINT_THRESHOLD_VALUES {
+            assert!(all.contains(&DigestStrategy::OverPointThreshold(t)));
+        }
+    }
+
+    #[test]
+    fn test_max_top_n() {
+        assert_eq!(DigestStrategy::max_top_n(), 50);
+    }
+
+    #[test]
+    fn test_min_point_threshold() {
+        assert_eq!(DigestStrategy::min_point_threshold(), 100);
     }
 }

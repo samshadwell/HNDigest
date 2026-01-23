@@ -11,7 +11,6 @@
 use anyhow::{Context, Result};
 use aws_config::BehaviorVersion;
 use chrono::Utc;
-use hndigest::configuration::{POINT_THRESHOLD_VALUES, TOP_N_VALUES};
 use hndigest::storage_adapter::StorageAdapter;
 use hndigest::strategies::DigestStrategy;
 use hndigest::types::Subscriber;
@@ -36,15 +35,7 @@ async fn main() -> Result<()> {
     let storage = StorageAdapter::new(dynamodb_client, table_name);
 
     // Build list of all strategies
-    let strategies: Vec<DigestStrategy> = TOP_N_VALUES
-        .iter()
-        .map(|&n| DigestStrategy::TopN(n))
-        .chain(
-            POINT_THRESHOLD_VALUES
-                .iter()
-                .map(|&t| DigestStrategy::OverPointThreshold(t)),
-        )
-        .collect();
+    let strategies = DigestStrategy::all();
 
     let migration_time = Utc::now();
     let mut migrated_count = 0;

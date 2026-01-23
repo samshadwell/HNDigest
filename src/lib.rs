@@ -1,4 +1,3 @@
-pub mod configuration;
 pub mod digest_builder;
 pub mod digest_mailer;
 pub mod post_fetcher;
