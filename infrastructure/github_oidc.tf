@@ -135,6 +135,30 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Effect   = "Allow"
         Action   = "logs:*"
         Resource = [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest[k].function_name}:*"]
+      },
+      {
+        Sid    = "LandingPageS3"
+        Effect = "Allow"
+        Action = "s3:*"
+        Resource = [
+          aws_s3_bucket.landing_page.arn,
+          "${aws_s3_bucket.landing_page.arn}/*"
+        ]
+      },
+      {
+        Sid      = "LandingPageACM"
+        Effect   = "Allow"
+        Action   = "acm:*"
+        Resource = aws_acm_certificate.landing_page.arn
+      },
+      {
+        Sid    = "LandingPageCloudFront"
+        Effect = "Allow"
+        Action = "cloudfront:*"
+        Resource = [
+          aws_cloudfront_distribution.landing_page.arn,
+          aws_cloudfront_origin_access_control.landing_page.arn
+        ]
       }
     ]
   })
