@@ -8,7 +8,6 @@ use std::str::FromStr;
 
 const SNAPSHOT_PARTITION_KEY: &str = "POSTS_SNAPSHOT";
 const DIGEST_PARTITION_KEY_PREFIX: &str = "DIGEST";
-const SUBSCRIBERS_PARTITION_KEY: &str = "SUBSCRIBERS";
 const SUBSCRIBER_PARTITION_KEY: &str = "SUBSCRIBER";
 const MODEL_TTL_DAYS: i64 = 30;
 
@@ -115,31 +114,6 @@ impl StorageAdapter {
             .map(|posts_av| from_dynamo_list(&posts_av))
             .transpose()
     }
-
-    /// Fetch subscribers using the old model (PK="SUBSCRIBERS", SK=strategy).
-    /// This is kept for backwards compatibility during migration.
-    pub async fn fetch_subscribers(&self, type_: &str) -> Result<Option<Vec<String>>> {
-        let output = self
-            .client
-            .get_item()
-            .table_name(&self.table_name)
-            .key(
-                "PK",
-                AttributeValue::S(SUBSCRIBERS_PARTITION_KEY.to_string()),
-            )
-            .key("SK", AttributeValue::S(type_.to_string()))
-            .send()
-            .await
-            .context("Failed to fetch subscribers")?;
-
-        output
-            .item
-            .and_then(|item| item.get("emails").cloned())
-            .map(|emails_av| as_string_list(&emails_av))
-            .transpose()
-    }
-
-    // ========== New Subscriber Model Methods ==========
 
     /// Get a single subscriber by email address.
     /// Returns None if the subscriber doesn't exist.
@@ -283,20 +257,6 @@ fn to_dynamo_list(posts: &[Post]) -> Result<AttributeValue> {
 fn from_dynamo_list(av: &AttributeValue) -> Result<Vec<Post>> {
     let json = av_to_json(av)?;
     Ok(serde_json::from_value(json)?)
-}
-
-fn as_string_list(av: &AttributeValue) -> Result<Vec<String>> {
-    match av {
-        AttributeValue::L(list) => Ok(list
-            .iter()
-            .filter_map(|item| match item {
-                AttributeValue::S(s) => Some(s.clone()),
-                _ => None,
-            })
-            .collect()),
-        AttributeValue::Ss(set) => Ok(set.clone()),
-        _ => anyhow::bail!("Expected list or string set attribute"),
-    }
 }
 
 /// Convert a JSON value to a DynamoDB AttributeValue.

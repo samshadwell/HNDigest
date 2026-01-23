@@ -10,10 +10,6 @@ path = "src/lib.rs"
 name = "hndigest"
 path = "src/main.rs"
 
-[[bin]]
-name = "migrate-subscribers"
-path = "src/bin/migrate_subscribers.rs"
-
 [dependencies]
 aws-config = { version = "1.1.7", features = ["rustls"] }
 aws-sdk-dynamodb = "1.16.0"
