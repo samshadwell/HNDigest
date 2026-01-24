@@ -20,17 +20,26 @@ runs:
 
     - name: Build release binary
       shell: bash
-      run: cargo build --release --target x86_64-unknown-linux-musl
+      run: cargo build --release --target x86_64-unknown-linux-musl --bins
 
-    - name: Create Lambda zip
+    - name: Create Lambda zips
       shell: bash
       run: |
+        # Main digest lambda
         cp target/x86_64-unknown-linux-musl/release/hndigest bootstrap
         zip lambda.zip bootstrap
+        rm bootstrap
+
+        # API lambda
+        cp target/x86_64-unknown-linux-musl/release/hndigest-api bootstrap
+        zip api-lambda.zip bootstrap
+        rm bootstrap
 
     - name: Upload artifact
       uses: actions/upload-artifact@v6
       with:
-        name: lambda-zip
-        path: lambda.zip
+        name: lambda-zips
+        path: |
+          lambda.zip
+          api-lambda.zip
         retention-days: 1

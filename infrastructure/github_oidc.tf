@@ -75,10 +75,13 @@ resource "aws_iam_role_policy" "github_actions_infra" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "Lambda"
-        Effect   = "Allow"
-        Action   = "lambda:*"
-        Resource = [for k, _ in local.environments : aws_lambda_function.hndigest[k].arn]
+        Sid    = "Lambda"
+        Effect = "Allow"
+        Action = "lambda:*"
+        Resource = concat(
+          [for k, _ in local.environments : aws_lambda_function.hndigest[k].arn],
+          [for k, _ in local.environments : aws_lambda_function.hndigest_api[k].arn]
+        )
       },
       {
         Sid      = "DynamoDB"
@@ -131,10 +134,20 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Resource = local.github_oidc_provider_arn
       },
       {
-        Sid      = "CloudWatchLogs"
+        Sid    = "CloudWatchLogs"
+        Effect = "Allow"
+        Action = "logs:*"
+        Resource = concat(
+          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest[k].function_name}:*"],
+          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest_api[k].function_name}:*"],
+          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/apigateway/*"]
+        )
+      },
+      {
+        Sid      = "CloudWatchLogsList"
         Effect   = "Allow"
-        Action   = "logs:*"
-        Resource = [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest[k].function_name}:*"]
+        Action   = "logs:DescribeLogGroups"
+        Resource = "arn:aws:logs:*:*:log-group:*"
       },
       {
         Sid    = "LandingPageS3"
@@ -159,6 +172,15 @@ resource "aws_iam_role_policy" "github_actions_infra" {
           aws_cloudfront_distribution.landing_page.arn,
           aws_cloudfront_origin_access_control.landing_page.arn
         ]
+      },
+      {
+        Sid    = "APIGateway"
+        Effect = "Allow"
+        Action = "apigateway:*"
+        Resource = concat(
+          [for k, _ in local.environments : aws_apigatewayv2_api.hndigest[k].arn],
+          [for k, _ in local.environments : "${aws_apigatewayv2_api.hndigest[k].arn}/*"]
+        )
       }
     ]
   })

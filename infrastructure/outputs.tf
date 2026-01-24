@@ -71,3 +71,19 @@ output "acm_certificate_validation_records" {
     }
   }
 }
+
+# API Gateway outputs
+output "api_gateway_url" {
+  description = "API Gateway endpoint URL (production) - used internally by CloudFront"
+  value       = aws_apigatewayv2_api.hndigest["prod"].api_endpoint
+}
+
+output "api_lambda_function_name" {
+  description = "Name of the API Lambda function (production)"
+  value       = aws_lambda_function.hndigest_api["prod"].function_name
+}
+
+output "staging_api_lambda_function_name" {
+  description = "Name of the staging API Lambda function"
+  value       = local.create_staging ? aws_lambda_function.hndigest_api["staging"].function_name : null
+}

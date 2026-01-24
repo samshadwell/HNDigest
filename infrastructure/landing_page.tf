@@ -80,12 +80,28 @@ resource "aws_cloudfront_distribution" "landing_page" {
   aliases             = local.landing_page_aliases
   price_class         = "PriceClass_100" # US, Canada, Europe only (cheapest)
 
+  # S3 origin for static content
   origin {
     domain_name              = aws_s3_bucket.landing_page.bucket_regional_domain_name
     origin_id                = "S3-landing-page"
     origin_access_control_id = aws_cloudfront_origin_access_control.landing_page.id
   }
 
+  # API Gateway origin for /api/* requests
+  origin {
+    # Extract the domain from the API Gateway URL (remove https:// prefix)
+    domain_name = replace(aws_apigatewayv2_api.hndigest["prod"].api_endpoint, "https://", "")
+    origin_id   = "APIGateway"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # Default behavior: serve from S3
   default_cache_behavior {
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
@@ -103,6 +119,29 @@ resource "aws_cloudfront_distribution" "landing_page" {
     min_ttl     = 0
     default_ttl = 3600  # 1 hour
     max_ttl     = 86400 # 24 hours
+  }
+
+  # API behavior: forward /api/* to API Gateway
+  ordered_cache_behavior {
+    path_pattern           = "/api/*"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "APIGateway"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    # Don't cache API responses
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 0
+
+    forwarded_values {
+      query_string = true # Forward query strings (e.g., ?token=...)
+      headers      = ["Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"]
+      cookies {
+        forward = "none"
+      }
+    }
   }
 
   restrictions {
@@ -151,11 +190,35 @@ resource "aws_s3_bucket_policy" "landing_page" {
   })
 }
 
-# Upload the index.html file
+# Upload static files
 resource "aws_s3_object" "index_html" {
   bucket       = aws_s3_bucket.landing_page.id
   key          = "index.html"
   source       = "${path.module}/../static/index.html"
   content_type = "text/html"
   etag         = filemd5("${path.module}/../static/index.html")
+}
+
+resource "aws_s3_object" "style_css" {
+  bucket       = aws_s3_bucket.landing_page.id
+  key          = "style.css"
+  source       = "${path.module}/../static/style.css"
+  content_type = "text/css"
+  etag         = filemd5("${path.module}/../static/style.css")
+}
+
+resource "aws_s3_object" "unsubscribe_success" {
+  bucket       = aws_s3_bucket.landing_page.id
+  key          = "unsubscribe-success.html"
+  source       = "${path.module}/../static/unsubscribe-success.html"
+  content_type = "text/html"
+  etag         = filemd5("${path.module}/../static/unsubscribe-success.html")
+}
+
+resource "aws_s3_object" "unsubscribe_error" {
+  bucket       = aws_s3_bucket.landing_page.id
+  key          = "unsubscribe-error.html"
+  source       = "${path.module}/../static/unsubscribe-error.html"
+  content_type = "text/html"
+  etag         = filemd5("${path.module}/../static/unsubscribe-error.html")
 }
