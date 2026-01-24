@@ -116,25 +116,6 @@ impl StorageAdapter {
             .transpose()
     }
 
-    /// Get a single subscriber by email address.
-    /// Returns None if the subscriber doesn't exist.
-    pub async fn get_subscriber(&self, email: &str) -> Result<Option<Subscriber>> {
-        let output = self
-            .client
-            .get_item()
-            .table_name(&self.table_name)
-            .key(
-                "PK",
-                AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
-            )
-            .key("SK", AttributeValue::S(email.to_lowercase()))
-            .send()
-            .await
-            .context("Failed to get subscriber")?;
-
-        output.item.map(subscriber_from_item).transpose()
-    }
-
     /// Get a subscriber by their unsubscribe token.
     /// Returns None if no subscriber exists with this token.
     /// Fails if multiple subscribers have the same token (should never happen).
@@ -232,7 +213,7 @@ impl StorageAdapter {
             ),
             (
                 "unsubscribe_token".to_string(),
-                AttributeValue::S(subscriber.unsubscribe_token.clone()),
+                AttributeValue::S(subscriber.unsubscribe_token.to_string()),
             ),
         ]);
 
@@ -365,15 +346,11 @@ fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscri
         .transpose()
         .context("Invalid verified_at timestamp")?;
 
-    // TODO: After running the migration script (migrate-tokens), remove this fallback.
-    // The unsubscribe_token field should be required, and deserialization should fail
-    // if it's missing. This auto-generation is only here for backwards compatibility
-    // during the migration period.
     let unsubscribe_token = item
         .get("unsubscribe_token")
         .and_then(|v| v.as_s().ok())
-        .cloned()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        .ok_or_else(|| anyhow::anyhow!("Missing unsubscribe_token field"))?
+        .clone();
 
     Ok(Subscriber {
         email,

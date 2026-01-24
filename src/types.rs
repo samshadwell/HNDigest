@@ -20,7 +20,6 @@ pub struct Subscriber {
     pub strategy: DigestStrategy,
     pub subscribed_at: DateTime<Utc>,
     pub verified_at: Option<DateTime<Utc>>,
-    /// Unique token for unsubscribe links (UUID v4)
     pub unsubscribe_token: String,
 }
 
@@ -34,10 +33,5 @@ impl Subscriber {
             verified_at: None,
             unsubscribe_token: uuid::Uuid::new_v4().to_string(),
         }
-    }
-
-    /// Generate a new unsubscribe token for this subscriber.
-    pub fn regenerate_token(&mut self) {
-        self.unsubscribe_token = uuid::Uuid::new_v4().to_string();
     }
 }

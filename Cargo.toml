@@ -15,8 +15,8 @@ name = "hndigest-api"
 path = "src/bin/api.rs"
 
 [[bin]]
-name = "migrate-tokens"
-path = "src/bin/migrate_tokens.rs"
+name = "add-subscriber"
+path = "src/bin/add_subscriber.rs"
 
 [dependencies]
 anyhow = "1.0"
@@ -24,7 +24,6 @@ askama = "0.15"
 aws-config = { version = "1.1.7", features = ["rustls"] }
 aws-sdk-dynamodb = "1.16.0"
 aws-sdk-sesv2 = "1.14.0"
-aws_lambda_events = { version = "0.15", default-features = false, features = ["apigw"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 lambda_http = "1.0.2"
