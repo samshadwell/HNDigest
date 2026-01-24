@@ -176,8 +176,12 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
         }
     }
 
-    info!("Handler completed successfully.");
-    Ok(())
+    if failure_count > 0 {
+        Err(Error::from("Some emails failed to send."))
+    } else {
+        info!("Handler completed successfully.");
+        Ok(())
+    }
 }
 
 /// Build digests for all strategies in parallel.
