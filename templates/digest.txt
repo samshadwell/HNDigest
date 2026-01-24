@@ -1,0 +1,11 @@
+Your daily Hacker News digest:
+
+{% for post in posts %}
+{{ post.title }}
+{{ post.points }} points
+{% if let Some(url) = post.url %}Link: {{ url }}
+{% endif %}Comments: https://news.ycombinator.com/item?id={{ post.object_id }}
+
+{% endfor %}
+---
+Unsubscribe: {{ unsubscribe_url }}

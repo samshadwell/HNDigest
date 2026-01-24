@@ -1,3 +1,4 @@
+use anyhow::Context;
 use askama::Template;
 use aws_config::BehaviorVersion;
 use chrono::{DateTime, NaiveTime, Utc};
@@ -13,13 +14,20 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 const MAX_CONCURRENT_EMAILS: usize = 10;
 
 #[derive(Template)]
 #[template(path = "digest.html")]
-struct DigestTemplate<'a> {
+struct DigestHtmlTemplate<'a> {
+    posts: &'a [Post],
+    unsubscribe_url: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "digest.txt")]
+struct DigestTextTemplate<'a> {
     posts: &'a [Post],
     unsubscribe_url: &'a str,
 }
@@ -150,24 +158,28 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
                     base_url, subscriber.unsubscribe_token
                 );
 
-                let tmpl = DigestTemplate {
+                let html_content = DigestHtmlTemplate {
                     posts,
                     unsubscribe_url: &unsubscribe_url,
-                };
-                let content = match tmpl.render() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        warn!(
-                            email = subscriber.email,
-                            error = %e,
-                            "Failed to render template"
-                        );
-                        return Err(anyhow::anyhow!("Template render failed: {}", e));
-                    }
-                };
+                }
+                .render()
+                .context("Failed to render HTML template")?;
+
+                let text_content = DigestTextTemplate {
+                    posts,
+                    unsubscribe_url: &unsubscribe_url,
+                }
+                .render()
+                .context("Failed to render text template")?;
 
                 mailer
-                    .send_mail(subject, &content, &subscriber.email, &unsubscribe_url)
+                    .send_mail(
+                        subject,
+                        &html_content,
+                        &text_content,
+                        &subscriber.email,
+                        &unsubscribe_url,
+                    )
                     .await
             }
         })
