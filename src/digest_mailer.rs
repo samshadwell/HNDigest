@@ -42,7 +42,6 @@ impl DigestMailer {
             .source(&self.from_address)
             .destination(dest)
             .reply_to_addresses(&self.reply_to_address)
-            .return_path(&self.reply_to_address)
             .message(message)
             .send()
             .await
