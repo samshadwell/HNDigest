@@ -17,6 +17,9 @@ runs:
 
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2.8.2
+      with:
+        # Avoid collisions with non-musl builds
+        key: "lambda-musl"
 
     - name: Build release binary
       shell: bash
