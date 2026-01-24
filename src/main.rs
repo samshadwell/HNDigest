@@ -176,8 +176,17 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
         }
     }
 
-    info!("Handler completed successfully.");
-    Ok(())
+    if failure_count * 10 > success_count + failure_count {
+        error!(
+            failure_count,
+            total_emails = success_count + failure_count,
+            "More than 10% of emails failed to send"
+        );
+        Err(Error::from("Large number of email send failures"))
+    } else {
+        info!("Handler completed successfully.");
+        Ok(())
+    }
 }
 
 /// Build digests for all strategies in parallel.
