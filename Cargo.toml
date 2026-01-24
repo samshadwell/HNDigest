@@ -15,8 +15,8 @@ name = "hndigest-api"
 path = "src/bin/api.rs"
 
 [[bin]]
-name = "migrate-tokens"
-path = "src/bin/migrate_tokens.rs"
+name = "add-subscriber"
+path = "src/bin/add_subscriber.rs"
 
 [dependencies]
 anyhow = "1.0"

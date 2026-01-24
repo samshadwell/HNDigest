@@ -232,7 +232,7 @@ impl StorageAdapter {
             ),
             (
                 "unsubscribe_token".to_string(),
-                AttributeValue::S(subscriber.unsubscribe_token.clone()),
+                AttributeValue::S(subscriber.unsubscribe_token.to_string()),
             ),
         ]);
 
@@ -365,15 +365,11 @@ fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscri
         .transpose()
         .context("Invalid verified_at timestamp")?;
 
-    // TODO: After running the migration script (migrate-tokens), remove this fallback.
-    // The unsubscribe_token field should be required, and deserialization should fail
-    // if it's missing. This auto-generation is only here for backwards compatibility
-    // during the migration period.
     let unsubscribe_token = item
         .get("unsubscribe_token")
         .and_then(|v| v.as_s().ok())
-        .cloned()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        .ok_or_else(|| anyhow::anyhow!("Missing unsubscribe_token field"))?
+        .clone();
 
     Ok(Subscriber {
         email,
