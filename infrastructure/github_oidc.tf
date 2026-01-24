@@ -134,10 +134,14 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Resource = local.github_oidc_provider_arn
       },
       {
-        Sid      = "CloudWatchLogs"
-        Effect   = "Allow"
-        Action   = "logs:*"
-        Resource = [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest[k].function_name}:*"]
+        Sid    = "CloudWatchLogs"
+        Effect = "Allow"
+        Action = "logs:*"
+        Resource = concat(
+          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest[k].function_name}:*"],
+          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest_api[k].function_name}:*"],
+          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/apigateway/*"]
+        )
       },
       {
         Sid      = "CloudWatchLogsList"
@@ -170,10 +174,13 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         ]
       },
       {
-        Sid      = "APIGateway"
-        Effect   = "Allow"
-        Action   = "apigateway:*"
-        Resource = [for k, _ in local.environments : aws_apigatewayv2_api.hndigest[k].arn]
+        Sid    = "APIGateway"
+        Effect = "Allow"
+        Action = "apigateway:*"
+        Resource = concat(
+          [for k, _ in local.environments : aws_apigatewayv2_api.hndigest[k].arn],
+          [for k, _ in local.environments : "${aws_apigatewayv2_api.hndigest[k].arn}/*"]
+        )
       }
     ]
   })
