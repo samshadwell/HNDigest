@@ -38,18 +38,27 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v7
         with:
-          name: lambda-zip
+          name: lambda-zips
 
-      - name: Deploy to Lambda
+      - name: Deploy to Digest Lambda
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
             --zip-file fileb://lambda.zip
 
+      - name: Deploy to API Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }}-api \
+            --zip-file fileb://api-lambda.zip
+
       - name: Wait for function update
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }}
+
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }}-api
 
   invoke:
     name: Invoke

@@ -39,16 +39,23 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v7
         with:
-          name: lambda-zip
-      - name: Deploy to Lambda
+          name: lambda-zips
+      - name: Deploy to Digest Lambda
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.STAGING_FUNCTION }} \
             --zip-file fileb://lambda.zip
+      - name: Deploy to API Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.STAGING_FUNCTION }}-api \
+            --zip-file fileb://api-lambda.zip
       - name: Wait for function update
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.STAGING_FUNCTION }}
+          aws lambda wait function-updated \
+            --function-name ${{ env.STAGING_FUNCTION }}-api
 
   invoke-staging:
     name: Invoke Staging
@@ -90,16 +97,24 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v7
         with:
-          name: lambda-zip
-      - name: Deploy to Lambda
+          name: lambda-zips
+      - name: Deploy to Digest Lambda
         run: |
           echo "Deploying to ${{ env.PROD_FUNCTION }}..."
           aws lambda update-function-code \
             --function-name ${{ env.PROD_FUNCTION }} \
             --zip-file fileb://lambda.zip
+      - name: Deploy to API Lambda
+        run: |
+          echo "Deploying to ${{ env.PROD_FUNCTION }}-api..."
+          aws lambda update-function-code \
+            --function-name ${{ env.PROD_FUNCTION }}-api \
+            --zip-file fileb://api-lambda.zip
       - name: Wait for function update
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.PROD_FUNCTION }}
+          aws lambda wait function-updated \
+            --function-name ${{ env.PROD_FUNCTION }}-api
 
           echo "Production Lambda updated successfully"

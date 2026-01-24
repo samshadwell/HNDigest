@@ -10,14 +10,24 @@ path = "src/lib.rs"
 name = "hndigest"
 path = "src/main.rs"
 
+[[bin]]
+name = "hndigest-api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "migrate-tokens"
+path = "src/bin/migrate_tokens.rs"
+
 [dependencies]
 anyhow = "1.0"
 askama = "0.15"
 aws-config = { version = "1.1.7", features = ["rustls"] }
 aws-sdk-dynamodb = "1.16.0"
-aws-sdk-ses = "1.14.0"
+aws-sdk-sesv2 = "1.14.0"
+aws_lambda_events = { version = "0.15", default-features = false, features = ["apigw"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
+lambda_http = "1.0.2"
 lambda_runtime = "1.0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -25,3 +35,4 @@ serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.0", features = ["v4"] }

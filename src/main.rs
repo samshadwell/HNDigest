@@ -21,6 +21,7 @@ const MAX_CONCURRENT_EMAILS: usize = 10;
 #[template(path = "digest.html")]
 struct DigestTemplate<'a> {
     posts: &'a [Post],
+    unsubscribe_url: &'a str,
 }
 
 #[tokio::main]
@@ -49,6 +50,8 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let email_reply_to = env::var("EMAIL_REPLY_TO")
         .map_err(|_| Error::from("EMAIL_REPLY_TO environment variable must be set"))?;
     let subject_prefix = env::var("SUBJECT_PREFIX").ok().filter(|s| !s.is_empty());
+    let base_url = env::var("BASE_URL")
+        .map_err(|_| Error::from("BASE_URL environment variable must be set"))?;
 
     let date = Utc::now()
         .date_naive()
@@ -59,7 +62,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
 
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
-    let ses_client = aws_sdk_ses::Client::new(&config);
+    let ses_client = aws_sdk_sesv2::Client::new(&config);
     let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
     let mailer = Arc::new(DigestMailer::new(ses_client, email_from, email_reply_to));
     let snapshotter = PostSnapshotter::new(&storage_adapter);
@@ -126,6 +129,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
             let digests = &digests_by_strategy;
             let mailer = &mailer;
             let subject = &subject;
+            let base_url = &base_url;
 
             async move {
                 let posts = match digests.get(&subscriber.strategy) {
@@ -140,7 +144,16 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
                     }
                 };
 
-                let tmpl = DigestTemplate { posts };
+                // Generate personalized unsubscribe URL
+                let unsubscribe_url = format!(
+                    "{}/api/unsubscribe?token={}",
+                    base_url, subscriber.unsubscribe_token
+                );
+
+                let tmpl = DigestTemplate {
+                    posts,
+                    unsubscribe_url: &unsubscribe_url,
+                };
                 let content = match tmpl.render() {
                     Ok(c) => c,
                     Err(e) => {
@@ -153,7 +166,9 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
                     }
                 };
 
-                mailer.send_mail(subject, &content, &subscriber.email).await
+                mailer
+                    .send_mail(subject, &content, &subscriber.email, &unsubscribe_url)
+                    .await
             }
         })
         .buffer_unordered(MAX_CONCURRENT_EMAILS)

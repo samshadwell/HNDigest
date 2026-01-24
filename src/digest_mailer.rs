@@ -1,12 +1,8 @@
-use aws_sdk_ses::{
-    Client,
-    types::{Body, Content, Destination, Message},
-};
+use aws_sdk_sesv2::Client;
+use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message, MessageHeader};
 
 use anyhow::{Context, Result};
 use tracing::info;
-
-const ENCODING: &str = "UTF-8";
 
 pub struct DigestMailer {
     ses_client: Client,
@@ -23,26 +19,48 @@ impl DigestMailer {
         }
     }
 
-    /// Send an email to a single recipient.
-    pub async fn send_mail(&self, subject: &str, content: &str, recipient: &str) -> Result<()> {
-        let dest = Destination::builder().to_addresses(recipient).build();
+    /// Send an email to a single recipient with RFC 8058 unsubscribe headers.
+    pub async fn send_mail(
+        &self,
+        subject: &str,
+        content: &str,
+        recipient: &str,
+        unsubscribe_url: &str,
+    ) -> Result<()> {
+        // Build RFC 8058 List-Unsubscribe headers
+        let list_unsubscribe_header = MessageHeader::builder()
+            .name("List-Unsubscribe")
+            .value(format!("<{}>", unsubscribe_url))
+            .build()?;
 
-        let subject_content = Content::builder().data(subject).charset(ENCODING).build()?;
-        let body_content = Content::builder().data(content).charset(ENCODING).build()?;
+        let list_unsubscribe_post_header = MessageHeader::builder()
+            .name("List-Unsubscribe-Post")
+            .value("List-Unsubscribe=One-Click")
+            .build()?;
+
+        // Build email content
+        let subject_content = Content::builder().data(subject).charset("UTF-8").build()?;
+        let body_content = Content::builder().data(content).charset("UTF-8").build()?;
+
         let body = Body::builder().html(body_content).build();
-
         let message = Message::builder()
             .subject(subject_content)
             .body(body)
+            .headers(list_unsubscribe_header)
+            .headers(list_unsubscribe_post_header)
             .build();
+
+        let destination = Destination::builder().to_addresses(recipient).build();
+
+        let email_content = EmailContent::builder().simple(message).build();
 
         let response = self
             .ses_client
             .send_email()
-            .source(&self.from_address)
-            .destination(dest)
+            .from_email_address(&self.from_address)
             .reply_to_addresses(&self.reply_to_address)
-            .message(message)
+            .destination(destination)
+            .content(email_content)
             .send()
             .await
             .context(format!("Failed to send email to {}", recipient))?;

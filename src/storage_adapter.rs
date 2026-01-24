@@ -10,6 +10,7 @@ const SNAPSHOT_PARTITION_KEY: &str = "POSTS_SNAPSHOT";
 const DIGEST_PARTITION_KEY_PREFIX: &str = "DIGEST";
 const SUBSCRIBER_PARTITION_KEY: &str = "SUBSCRIBER";
 const MODEL_TTL_DAYS: i64 = 30;
+const UNSUBSCRIBE_TOKEN_INDEX: &str = "unsubscribe_token_index";
 
 pub struct StorageAdapter {
     client: Client,
@@ -134,6 +135,38 @@ impl StorageAdapter {
         output.item.map(subscriber_from_item).transpose()
     }
 
+    /// Get a subscriber by their unsubscribe token.
+    /// Returns None if no subscriber exists with this token.
+    /// Fails if multiple subscribers have the same token (should never happen).
+    pub async fn get_subscriber_by_token(&self, token: &str) -> Result<Option<Subscriber>> {
+        let output = self
+            .client
+            .query()
+            .table_name(&self.table_name)
+            .index_name(UNSUBSCRIBE_TOKEN_INDEX)
+            .key_condition_expression("unsubscribe_token = :token")
+            .expression_attribute_values(":token", AttributeValue::S(token.to_string()))
+            .send()
+            .await
+            .context("Failed to query subscriber by token")?;
+
+        let items = output.items.unwrap_or_default();
+
+        match items.len() {
+            0 => Ok(None),
+            1 => items
+                .into_iter()
+                .next()
+                .map(subscriber_from_item)
+                .transpose(),
+            n => anyhow::bail!(
+                "Data integrity error: found {} subscribers with token '{}'. Tokens must be unique.",
+                n,
+                token
+            ),
+        }
+    }
+
     /// Get all subscribers (scans the table for SUBSCRIBER records).
     pub async fn get_all_subscribers(&self) -> Result<Vec<Subscriber>> {
         let mut subscribers = Vec::new();
@@ -196,6 +229,10 @@ impl StorageAdapter {
             (
                 "subscribed_at".to_string(),
                 AttributeValue::S(subscriber.subscribed_at.to_rfc3339()),
+            ),
+            (
+                "unsubscribe_token".to_string(),
+                AttributeValue::S(subscriber.unsubscribe_token.clone()),
             ),
         ]);
 
@@ -328,10 +365,21 @@ fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscri
         .transpose()
         .context("Invalid verified_at timestamp")?;
 
+    // TODO: After running the migration script (migrate-tokens), remove this fallback.
+    // The unsubscribe_token field should be required, and deserialization should fail
+    // if it's missing. This auto-generation is only here for backwards compatibility
+    // during the migration period.
+    let unsubscribe_token = item
+        .get("unsubscribe_token")
+        .and_then(|v| v.as_s().ok())
+        .cloned()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
     Ok(Subscriber {
         email,
         strategy,
         subscribed_at,
         verified_at,
+        unsubscribe_token,
     })
 }

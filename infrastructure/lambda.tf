@@ -32,6 +32,7 @@ resource "aws_lambda_function" "hndigest" {
         EMAIL_FROM     = each.value.from_email
         EMAIL_REPLY_TO = each.value.reply_to_email
         RUN_HOUR_UTC   = tostring(var.run_hour_utc)
+        BASE_URL       = "https://${var.landing_page_domain}"
       },
       each.value.subject_prefix != "" ? { SUBJECT_PREFIX = each.value.subject_prefix } : {}
     )
@@ -39,6 +40,38 @@ resource "aws_lambda_function" "hndigest" {
 
   # Infrastructure is managed by OpenTofu, but code deployment
   # happens separately via CI/CD
+  lifecycle {
+    ignore_changes = [
+      filename,
+      source_code_hash,
+    ]
+  }
+}
+
+# API Lambda function (separate from digest Lambda)
+resource "aws_lambda_function" "hndigest_api" {
+  for_each = local.environments
+
+  function_name = "${each.value.function_name}-api"
+  role          = aws_iam_role.lambda_exec[each.key].arn
+  handler       = "bootstrap"
+  runtime       = "provided.al2023"
+  architectures = ["x86_64"]
+
+  filename         = data.archive_file.lambda_placeholder.output_path
+  source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
+
+  memory_size = var.lambda_memory_size
+  timeout     = var.lambda_timeout
+
+  environment {
+    variables = {
+      RUST_LOG       = "info"
+      DYNAMODB_TABLE = each.value.table_name
+      BASE_URL       = "https://${var.landing_page_domain}"
+    }
+  }
+
   lifecycle {
     ignore_changes = [
       filename,
