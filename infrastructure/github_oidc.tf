@@ -168,10 +168,10 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Sid    = "LandingPageCloudFront"
         Effect = "Allow"
         Action = "cloudfront:*"
-        Resource = [
-          aws_cloudfront_distribution.landing_page.arn,
-          aws_cloudfront_origin_access_control.landing_page.arn
-        ]
+        Resource = concat(
+          [for k, _ in local.environments : aws_cloudfront_distribution.landing_page[k].arn],
+          [aws_cloudfront_origin_access_control.landing_page.arn]
+        )
       },
       {
         Sid    = "APIGateway"
