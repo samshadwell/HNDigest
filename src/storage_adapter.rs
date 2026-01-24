@@ -116,25 +116,6 @@ impl StorageAdapter {
             .transpose()
     }
 
-    /// Get a single subscriber by email address.
-    /// Returns None if the subscriber doesn't exist.
-    pub async fn get_subscriber(&self, email: &str) -> Result<Option<Subscriber>> {
-        let output = self
-            .client
-            .get_item()
-            .table_name(&self.table_name)
-            .key(
-                "PK",
-                AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
-            )
-            .key("SK", AttributeValue::S(email.to_lowercase()))
-            .send()
-            .await
-            .context("Failed to get subscriber")?;
-
-        output.item.map(subscriber_from_item).transpose()
-    }
-
     /// Get a subscriber by their unsubscribe token.
     /// Returns None if no subscriber exists with this token.
     /// Fails if multiple subscribers have the same token (should never happen).
