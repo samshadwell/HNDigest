@@ -23,7 +23,8 @@ impl DigestMailer {
     pub async fn send_mail(
         &self,
         subject: &str,
-        content: &str,
+        html_content: &str,
+        text_content: &str,
         recipient: &str,
         unsubscribe_url: &str,
     ) -> Result<()> {
@@ -40,9 +41,16 @@ impl DigestMailer {
 
         // Build email content
         let subject_content = Content::builder().data(subject).charset("UTF-8").build()?;
-        let body_content = Content::builder().data(content).charset("UTF-8").build()?;
+        let html_body = Content::builder()
+            .data(html_content)
+            .charset("UTF-8")
+            .build()?;
+        let text_body = Content::builder()
+            .data(text_content)
+            .charset("UTF-8")
+            .build()?;
 
-        let body = Body::builder().html(body_content).build();
+        let body = Body::builder().html(html_body).text(text_body).build();
         let message = Message::builder()
             .subject(subject_content)
             .body(body)
