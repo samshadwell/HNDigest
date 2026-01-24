@@ -32,7 +32,7 @@ resource "aws_lambda_function" "hndigest" {
         EMAIL_FROM     = each.value.from_email
         EMAIL_REPLY_TO = each.value.reply_to_email
         RUN_HOUR_UTC   = tostring(var.run_hour_utc)
-        BASE_URL       = "https://${var.landing_page_domain}"
+        BASE_URL       = "https://${each.value.domain}"
       },
       each.value.subject_prefix != "" ? { SUBJECT_PREFIX = each.value.subject_prefix } : {}
     )
@@ -68,7 +68,7 @@ resource "aws_lambda_function" "hndigest_api" {
     variables = {
       RUST_LOG       = "info"
       DYNAMODB_TABLE = each.value.table_name
-      BASE_URL       = "https://${var.landing_page_domain}"
+      BASE_URL       = "https://${each.value.domain}"
     }
   }
 

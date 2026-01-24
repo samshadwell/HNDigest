@@ -18,6 +18,7 @@ locals {
         subject_prefix = ""
         # Prod gets the EventBridge schedule
         has_schedule = true
+        domain       = var.landing_page_domain
       }
     },
     local.create_staging ? {
@@ -31,6 +32,7 @@ locals {
         subject_prefix = "[STAGING]"
         # Staging is triggered manually, no schedule
         has_schedule = false
+        domain       = var.landing_page_staging_domain
       }
     } : {}
   )

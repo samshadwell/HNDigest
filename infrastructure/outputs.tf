@@ -48,12 +48,22 @@ output "staging_dynamodb_table_name" {
 # Landing page outputs
 output "landing_page_cloudfront_domain" {
   description = "CloudFront distribution domain name for the landing page"
-  value       = aws_cloudfront_distribution.landing_page.domain_name
+  value       = aws_cloudfront_distribution.landing_page["prod"].domain_name
 }
 
 output "landing_page_cloudfront_hosted_zone_id" {
   description = "CloudFront distribution hosted zone ID (for Route53 alias records)"
-  value       = aws_cloudfront_distribution.landing_page.hosted_zone_id
+  value       = aws_cloudfront_distribution.landing_page["prod"].hosted_zone_id
+}
+
+output "staging_landing_page_cloudfront_domain" {
+  description = "CloudFront distribution domain name for staging"
+  value       = local.create_staging ? aws_cloudfront_distribution.landing_page["staging"].domain_name : null
+}
+
+output "staging_landing_page_cloudfront_hosted_zone_id" {
+  description = "CloudFront distribution hosted zone ID for staging (for Route53 alias records)"
+  value       = local.create_staging ? aws_cloudfront_distribution.landing_page["staging"].hosted_zone_id : null
 }
 
 output "landing_page_s3_bucket" {

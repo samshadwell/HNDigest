@@ -1,14 +1,6 @@
 # Landing page infrastructure
 # Static site hosted via S3 + CloudFront
 
-locals {
-  # Include staging domain if set, otherwise just production
-  landing_page_aliases = compact([
-    var.landing_page_domain,
-    var.landing_page_staging_domain
-  ])
-}
-
 # ACM certificate must be in us-east-1 for CloudFront
 provider "aws" {
   alias  = "us_east_1"
@@ -72,25 +64,27 @@ resource "aws_cloudfront_origin_access_control" "landing_page" {
   signing_protocol                  = "sigv4"
 }
 
-# CloudFront distribution
+# CloudFront distribution - one per environment
 resource "aws_cloudfront_distribution" "landing_page" {
+  for_each = local.environments
+
   enabled             = true
   is_ipv6_enabled     = true
   default_root_object = "index.html"
-  aliases             = local.landing_page_aliases
+  aliases             = [each.value.domain]
   price_class         = "PriceClass_100" # US, Canada, Europe only (cheapest)
 
-  # S3 origin for static content
+  # S3 origin for static content (shared across environments)
   origin {
     domain_name              = aws_s3_bucket.landing_page.bucket_regional_domain_name
     origin_id                = "S3-landing-page"
     origin_access_control_id = aws_cloudfront_origin_access_control.landing_page.id
   }
 
-  # API Gateway origin for /api/* requests
+  # API Gateway origin for /api/* requests - routes to correct environment
   origin {
     # Extract the domain from the API Gateway URL (remove https:// prefix)
-    domain_name = replace(aws_apigatewayv2_api.hndigest["prod"].api_endpoint, "https://", "")
+    domain_name = replace(aws_apigatewayv2_api.hndigest[each.key].api_endpoint, "https://", "")
     origin_id   = "APIGateway"
 
     custom_origin_config {
@@ -165,7 +159,7 @@ resource "aws_cloudfront_distribution" "landing_page" {
   depends_on = [aws_acm_certificate_validation.landing_page]
 }
 
-# S3 bucket policy allowing CloudFront access
+# S3 bucket policy allowing CloudFront access from all distributions
 resource "aws_s3_bucket_policy" "landing_page" {
   bucket = aws_s3_bucket.landing_page.id
 
@@ -182,7 +176,7 @@ resource "aws_s3_bucket_policy" "landing_page" {
         Resource = "${aws_s3_bucket.landing_page.arn}/*"
         Condition = {
           StringEquals = {
-            "AWS:SourceArn" = aws_cloudfront_distribution.landing_page.arn
+            "AWS:SourceArn" = [for k, _ in local.environments : aws_cloudfront_distribution.landing_page[k].arn]
           }
         }
       }
