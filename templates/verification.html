@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+    </head>
+    <body
+        style="
+            font-family:
+                -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto,
+                sans-serif;
+            line-height: 1.5;
+            color: #333;
+        "
+    >
+        <h2 style="color: #ff6600">Confirm your HNDigest subscription</h2>
+        <p>
+            You requested to subscribe to HNDigest, a daily digest of the top
+            Hacker News stories delivered to your inbox.
+        </p>
+        <p><strong>Your digest type:</strong> {{ strategy_description }}</p>
+        <p>Click the button below to confirm your subscription:</p>
+        <p style="margin: 30px 0">
+            <a
+                href="{{ verify_url }}"
+                style="
+                    background-color: #ff6600;
+                    color: white;
+                    padding: 12px 24px;
+                    text-decoration: none;
+                    border-radius: 4px;
+                    display: inline-block;
+                "
+            >
+                Confirm subscription
+            </a>
+        </p>
+        <p style="font-size: 14px; color: #666">
+            This link will expire in 24 hours. If you didn't request this
+            subscription, you can safely ignore this email.
+        </p>
+    </body>
+</html>

@@ -1,0 +1,10 @@
+Confirm your HNDigest subscription
+
+You requested to subscribe to HNDigest, a daily digest of the top Hacker News stories delivered to your inbox.
+
+Your digest type: {{ strategy_description }}
+
+Click the link below to confirm your subscription:
+{{ verify_url }}
+
+This link will expire in 24 hours. If you didn't request this subscription, you can safely ignore this email.

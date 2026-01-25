@@ -1,5 +1,5 @@
 use crate::strategies::DigestStrategy;
-use crate::types::{Post, Subscriber};
+use crate::types::{PendingSubscription, Post, Subscriber};
 use anyhow::{Context, Result};
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
 use chrono::{DateTime, Duration, Utc};
@@ -9,6 +9,7 @@ use std::str::FromStr;
 const SNAPSHOT_PARTITION_KEY: &str = "POSTS_SNAPSHOT";
 const DIGEST_PARTITION_KEY_PREFIX: &str = "DIGEST";
 const SUBSCRIBER_PARTITION_KEY: &str = "SUBSCRIBER";
+const PENDING_SUBSCRIPTION_PARTITION_KEY: &str = "PENDING_SUBSCRIPTION";
 const MODEL_TTL_DAYS: i64 = 30;
 const UNSUBSCRIBE_TOKEN_INDEX: &str = "unsubscribe_token_index";
 
@@ -251,6 +252,105 @@ impl StorageAdapter {
 
         Ok(())
     }
+
+    /// Create a pending subscription record.
+    /// Returns the generated token for the verification link.
+    pub async fn create_pending_subscription(&self, pending: &PendingSubscription) -> Result<()> {
+        let item = HashMap::from([
+            (
+                "PK".to_string(),
+                AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
+            ),
+            ("SK".to_string(), AttributeValue::S(pending.token.clone())),
+            (
+                "token".to_string(),
+                AttributeValue::S(pending.token.clone()),
+            ),
+            (
+                "email".to_string(),
+                AttributeValue::S(pending.email.to_lowercase()),
+            ),
+            (
+                "strategy".to_string(),
+                AttributeValue::S(pending.strategy.to_string()),
+            ),
+            (
+                "created_at".to_string(),
+                AttributeValue::S(pending.created_at.to_rfc3339()),
+            ),
+            (
+                "expires_at".to_string(),
+                AttributeValue::N(pending.expires_at.timestamp().to_string()),
+            ),
+        ]);
+
+        self.client
+            .put_item()
+            .table_name(&self.table_name)
+            .set_item(Some(item))
+            .send()
+            .await
+            .context("Failed to create pending subscription")?;
+
+        Ok(())
+    }
+
+    /// Get a pending subscription by token.
+    pub async fn get_pending_subscription(
+        &self,
+        token: &str,
+    ) -> Result<Option<PendingSubscription>> {
+        let output = self
+            .client
+            .get_item()
+            .table_name(&self.table_name)
+            .key(
+                "PK",
+                AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
+            )
+            .key("SK", AttributeValue::S(token.to_string()))
+            .send()
+            .await
+            .context("Failed to get pending subscription")?;
+
+        output.item.map(pending_subscription_from_item).transpose()
+    }
+
+    /// Delete a pending subscription by token.
+    pub async fn delete_pending_subscription(&self, token: &str) -> Result<()> {
+        self.client
+            .delete_item()
+            .table_name(&self.table_name)
+            .key(
+                "PK",
+                AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
+            )
+            .key("SK", AttributeValue::S(token.to_string()))
+            .send()
+            .await
+            .context("Failed to delete pending subscription")?;
+
+        Ok(())
+    }
+
+    /// Check if a subscriber already exists with this email address.
+    pub async fn subscriber_exists(&self, email: &str) -> Result<bool> {
+        let output = self
+            .client
+            .get_item()
+            .table_name(&self.table_name)
+            .key(
+                "PK",
+                AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
+            )
+            .key("SK", AttributeValue::S(email.to_lowercase()))
+            .projection_expression("email")
+            .send()
+            .await
+            .context("Failed to check subscriber existence")?;
+
+        Ok(output.item.is_some())
+    }
 }
 
 fn datestamp(date: DateTime<Utc>) -> String {
@@ -358,5 +458,52 @@ fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscri
         subscribed_at,
         verified_at,
         unsubscribe_token,
+    })
+}
+
+/// Convert a DynamoDB item to a PendingSubscription struct.
+fn pending_subscription_from_item(
+    item: HashMap<String, AttributeValue>,
+) -> Result<PendingSubscription> {
+    let token = item
+        .get("token")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing token field"))?
+        .clone();
+
+    let email = item
+        .get("email")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing email field"))?
+        .clone();
+
+    let strategy_str = item
+        .get("strategy")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing strategy field"))?;
+    let strategy = DigestStrategy::from_str(strategy_str).context("Invalid strategy value")?;
+
+    let created_at = item
+        .get("created_at")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing created_at field"))?
+        .parse::<DateTime<Utc>>()
+        .context("Invalid created_at timestamp")?;
+
+    let expires_at_ts = item
+        .get("expires_at")
+        .and_then(|v| v.as_n().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing expires_at field"))?
+        .parse::<i64>()
+        .context("Invalid expires_at timestamp")?;
+    let expires_at = DateTime::from_timestamp(expires_at_ts, 0)
+        .ok_or_else(|| anyhow::anyhow!("Invalid expires_at timestamp value"))?;
+
+    Ok(PendingSubscription {
+        token,
+        email,
+        strategy,
+        created_at,
+        expires_at,
     })
 }
