@@ -4,14 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - "infrastructure/**"
-      - ".github/workflows/opentofu-deploy.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "infrastructure/**"
-      - ".github/workflows/opentofu-deploy.yml"
 
 # On main: only one workflow at a time (queue, don't cancel)
 # On PRs: each PR runs independently
