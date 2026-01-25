@@ -40,7 +40,6 @@ a {
 }
 
 @media (prefers-color-scheme: dark) {
-
     html,
     body {
         background-color: rgb(42, 42, 42);
