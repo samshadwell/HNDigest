@@ -1,25 +1,26 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-    <meta charset="UTF-8">
-</head>
-<body>
-Your daily Hacker News digest:
-<br />
-{% for post in posts %}
-<p>
-    {{ post.title }}
-    <br />
-    {{ post.points }} points - {% if let Some(url) = post.url %}
-    <a href="{{ url }}"> link </a> - {% endif %}
-    <a href="https://news.ycombinator.com/item?id={{ post.object_id }}">
-        comments
-    </a>
-</p>
-{% endfor %}
-<br />
-<p style="font-size: 12px; color: #666;">
-    <a href="{{ unsubscribe_url }}" style="color: #666;">Unsubscribe</a> from this digest.
-</p>
-</body>
+    <head>
+        <meta charset="UTF-8" />
+    </head>
+    <body>
+        Your daily Hacker News digest:
+        <br />
+        {% for post in posts %}
+        <p>
+            {{ post.title }}
+            <br />
+            {{ post.points }} points - {% if let Some(url) = post.url %}
+            <a href="{{ url }}"> link </a> - {% endif %}
+            <a href="https://news.ycombinator.com/item?id={{ post.object_id }}">
+                comments
+            </a>
+        </p>
+        {% endfor %}
+        <br />
+        <p style="font-size: 12px; color: #666">
+            <a href="{{ unsubscribe_url }}" style="color: #666">Unsubscribe</a>
+            from this digest.
+        </p>
+    </body>
 </html>
