@@ -44,7 +44,7 @@ async fn main() -> Result<(), Error> {
 }
 
 async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
-    info!("Starting HNDigest handler...");
+    info!("Starting scheduled email handler...");
 
     // Read configuration from environment variables
     let run_hour_utc: u32 = env::var("RUN_HOUR_UTC")
@@ -116,7 +116,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
 
     // Step 4: Send emails to each subscriber (max 10 concurrent)
     let subject = {
-        let base = format!("Hacker News Digest for {}", date.format("%b %-d, %Y"));
+        let base = format!("Hacker Digest for {}", date.format("%b %-d, %Y"));
         match subject_prefix {
             Some(p) => format!("{} {}", p, base),
             None => base,

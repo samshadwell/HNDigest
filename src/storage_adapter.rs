@@ -256,7 +256,7 @@ impl StorageAdapter {
         let email_str = pending.email.to_string().to_lowercase();
         // Note: expires_at is stored as epoch seconds (N) for DynamoDB TTL,
         // while created_at is stored as RFC3339 string for human readability.
-        let item = HashMap::from([
+        let mut item = HashMap::from([
             (
                 "PK".to_string(),
                 AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
@@ -280,6 +280,14 @@ impl StorageAdapter {
                 AttributeValue::N(pending.expires_at.timestamp().to_string()),
             ),
         ]);
+
+        // Only write verified_at if set (for idempotent verification)
+        if let Some(verified_at) = pending.verified_at {
+            item.insert(
+                "verified_at".to_string(),
+                AttributeValue::S(verified_at.to_rfc3339()),
+            );
+        }
 
         self.client
             .put_item()
@@ -490,11 +498,18 @@ fn pending_subscription_from_item(
     let expires_at = DateTime::from_timestamp(expires_at_ts, 0)
         .ok_or_else(|| anyhow::anyhow!("Invalid expires_at timestamp value"))?;
 
+    // verified_at is optional - only present after user clicks verification link
+    let verified_at = item
+        .get("verified_at")
+        .and_then(|v| v.as_s().ok())
+        .and_then(|s| s.parse::<DateTime<Utc>>().ok());
+
     Ok(PendingSubscription {
         token,
         email,
         strategy,
         created_at,
         expires_at,
+        verified_at,
     })
 }

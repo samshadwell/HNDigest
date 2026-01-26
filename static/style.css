@@ -23,20 +23,36 @@ a {
     color: #ff6600;
 }
 
+button {
+    background-color: #ff6600;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    font-family: "Source Serif 4", serif;
+    font-size: 20px;
+    padding: 12px 32px;
+    transition: background-color 0.2s;
+}
+button:hover {
+    background-color: #e55c00;
+}
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
 .footer {
     font-size: 16px;
     color: rgb(100, 100, 100);
 }
 
-.hero {
-    h1 {
-        font-size: 50px;
-        color: #ff6600;
-    }
-
-    p {
-        font-size: 25px;
-    }
+.hero h1 {
+    font-size: 50px;
+    color: #ff6600;
+}
+.hero p {
+    font-size: 25px;
 }
 
 @media (prefers-color-scheme: dark) {

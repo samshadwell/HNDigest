@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Subscription Confirmed - HNDigest</title>
+        <title>Subscription Confirmed - Hacker Digest</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
@@ -16,11 +16,25 @@
     <body>
         <h1>You're subscribed!</h1>
         <p>
-            Your email has been verified and you're now subscribed to HNDigest.
-            You'll receive your first digest tomorrow morning.
+            Your email has been verified and you're now subscribed to Hacker
+            Digest. You'll receive your first digest at 5:00 AM UTC<span
+                id="local-time"
+            ></span
+            >.
         </p>
+        <script>
+            const utcHour = 5;
+            const d = new Date();
+            d.setUTCHours(utcHour, 0, 0, 0);
+            const localTime = d.toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+            });
+            document.getElementById("local-time").textContent =
+                ` (${localTime} in your local time)`;
+        </script>
         <p class="footer">
-            <a href="/">Back to HNDigest</a>
+            <a href="/">Back to home</a>
         </p>
     </body>
 </html>

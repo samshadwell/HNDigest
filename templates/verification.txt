@@ -1,6 +1,6 @@
-Confirm your HNDigest subscription
+Confirm your Hacker Digest subscription
 
-You requested to subscribe to HNDigest, a daily digest of the top Hacker News stories delivered to your inbox.
+You requested to subscribe to Hacker Digest, a daily digest of the top Hacker News stories delivered to your inbox.
 
 Your digest type: {{ strategy_description }}
 

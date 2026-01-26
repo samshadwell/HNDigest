@@ -410,7 +410,7 @@ async fn send_verification_email(
 
     // Build email
     let subject = Content::builder()
-        .data("Confirm your HNDigest subscription")
+        .data("Confirm your Hacker Digest subscription")
         .charset("UTF-8")
         .build()?;
     let html_body = Content::builder()
