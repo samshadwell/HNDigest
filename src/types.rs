@@ -101,8 +101,6 @@ pub struct PendingSubscription {
     pub strategy: DigestStrategy,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
-    /// Set when the user clicks the verification link. Allows idempotent verification
-    /// (clicking the link multiple times shows success instead of error).
     pub verified_at: Option<DateTime<Utc>>,
 }
 

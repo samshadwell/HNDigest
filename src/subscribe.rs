@@ -60,16 +60,15 @@ pub async fn verify_subscription(
         return Ok(None);
     }
 
-    // Already verified - return success without creating duplicate subscriber
+    // This check mostly exists to avoid generating a new unsubscribe token and
+    // invalidating any already-existing unsubscribe links
     if pending.verified_at.is_some() {
         return Ok(Some(Subscriber::new(pending.email, pending.strategy)));
     }
 
-    // Create verified subscriber
     let subscriber = Subscriber::new(pending.email.clone(), pending.strategy);
     storage.upsert_subscriber(&subscriber).await?;
 
-    // Mark pending as verified (keep for idempotency until TTL expires)
     let mut verified_pending = pending;
     verified_pending.verified_at = Some(chrono::Utc::now());
     storage
