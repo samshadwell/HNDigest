@@ -8,9 +8,11 @@ use askama::Template;
 use aws_config::BehaviorVersion;
 use aws_sdk_sesv2::Client as SesClient;
 use aws_sdk_sesv2::types::{Body as SesBody, Content, Destination, EmailContent, Message};
+use email_address::EmailAddress;
 use hndigest::storage_adapter::StorageAdapter;
 use hndigest::strategies::DigestStrategy;
 use hndigest::subscribe::{self, SubscribeResult};
+use hndigest::types::Token;
 use hndigest::unsubscribe;
 use lambda_http::{Body, Error, Request, RequestExt, Response, run, service_fn};
 use reqwest::Method;
@@ -94,6 +96,16 @@ fn json_response(status_code: u16, body: &str) -> Response<Body> {
         .expect("Failed to build response")
 }
 
+/// Extract request body as a string.
+fn body_to_string(body: &Body) -> Option<String> {
+    match body {
+        Body::Text(s) => Some(s.clone()),
+        Body::Binary(b) => std::str::from_utf8(b).ok().map(String::from),
+        Body::Empty => None,
+        _ => None,
+    }
+}
+
 // ============================================================================
 // Lambda Handler
 // ============================================================================
@@ -146,29 +158,28 @@ async fn handler(event: Request, state: Arc<AppState>) -> Result<Response<Body>,
 
     let query_params = event.query_string_parameters();
     let token = query_params.first("token").unwrap_or("");
+    let email = query_params.first("email").unwrap_or("");
 
     match (method, path) {
         (&Method::POST, "/api/subscribe") => {
-            let body_str = match event.body() {
-                Body::Text(s) => s.as_str().to_string(),
-                Body::Binary(b) => std::str::from_utf8(b).unwrap_or("").to_string(),
-                Body::Empty => String::new(),
-                _ => String::new(),
-            };
+            let body_str = body_to_string(event.body()).unwrap_or_default();
             Ok(handle_subscribe_post(&state, &body_str).await)
         }
-        (&Method::GET, "/api/verify") => Ok(handle_verify_get(&state, token).await),
+        (&Method::GET, "/api/verify") => Ok(handle_verify_get(&state, email, token).await),
         (&Method::GET, "/api/unsubscribe") => {
-            Ok(handle_unsubscribe_get(&state.storage, token).await)
+            let token = match Token::from_str(token) {
+                Ok(t) => t,
+                Err(_) => return Ok(redirect("/unsubscribe-error.html")),
+            };
+            Ok(handle_unsubscribe_get(&state.storage, &token).await)
         }
         (&Method::POST, "/api/unsubscribe") => {
-            let body_str = match event.body() {
-                Body::Text(s) => Some(s.as_str()),
-                Body::Binary(b) => std::str::from_utf8(b).ok(),
-                Body::Empty => None,
-                _ => None,
+            let token = match Token::from_str(token) {
+                Ok(t) => t,
+                Err(_) => return Ok(text_response(400, "Invalid token")),
             };
-            Ok(handle_unsubscribe_post(&state.storage, token, body_str).await)
+            let body_str = body_to_string(event.body());
+            Ok(handle_unsubscribe_post(&state.storage, &token, body_str.as_deref()).await)
         }
         _ => Ok(text_response(404, "Not Found")),
     }
@@ -181,13 +192,15 @@ async fn handler(event: Request, state: Arc<AppState>) -> Result<Response<Body>,
 /// GET /api/unsubscribe?token=...
 ///
 /// Shows confirmation page if token is valid, redirects to error page otherwise.
-async fn handle_unsubscribe_get(storage: &Arc<StorageAdapter>, token: &str) -> Response<Body> {
+async fn handle_unsubscribe_get(storage: &Arc<StorageAdapter>, token: &Token) -> Response<Body> {
     match unsubscribe::lookup_subscriber(storage, token).await {
         Ok(Some(subscriber)) => {
             // Render confirmation page
+            let email_str = subscriber.email.to_string();
+            let token_str = token.to_string();
             let template = UnsubscribeConfirmTemplate {
-                email: &subscriber.email,
-                token,
+                email: &email_str,
+                token: &token_str,
             };
             match template.render() {
                 Ok(html) => html_response(200, html),
@@ -215,7 +228,7 @@ async fn handle_unsubscribe_get(storage: &Arc<StorageAdapter>, token: &str) -> R
 /// (returns plain text response).
 async fn handle_unsubscribe_post(
     storage: &Arc<StorageAdapter>,
-    token: &str,
+    token: &Token,
     body: Option<&str>,
 ) -> Response<Body> {
     // RFC 8058 one-click unsubscribe sends "List-Unsubscribe=One-Click" in body
@@ -289,37 +302,38 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
         }
     };
 
-    // Create pending subscription
-    let pending = match subscribe::create_pending_subscription(
-        &state.storage,
-        &request.email,
-        strategy,
-    )
-    .await
-    {
-        Ok(SubscribeResult::PendingCreated(p)) => p,
-        Ok(SubscribeResult::AlreadySubscribed) => {
-            info!(email = %request.email, "Email already subscribed");
-            // Return generic message to avoid email enumeration
-            return json_response(
-                200,
-                r#"{"message": "Check your email to confirm your subscription"}"#,
-            );
-        }
-        Err(e) => {
-            // Check if it's a validation error
-            let err_msg = e.to_string();
-            if err_msg.contains("Invalid email") {
-                return json_response(400, r#"{"error": "Invalid email address"}"#);
-            }
-            error!(error = %e, "Failed to create pending subscription");
-            return json_response(500, r#"{"error": "Internal server error"}"#);
-        }
+    let email = match EmailAddress::from_str(&request.email) {
+        Ok(e) => e,
+        Err(_) => return json_response(400, r#"{"error": "Invalid email address"}"#),
     };
 
+    // Create pending subscription
+    let pending =
+        match subscribe::create_pending_subscription(&state.storage, &email, strategy).await {
+            Ok(SubscribeResult::PendingCreated(p)) => p,
+            Ok(SubscribeResult::AlreadySubscribed) => {
+                info!(email = %request.email, "Email already subscribed");
+                // Return generic message to avoid email enumeration
+                return json_response(
+                    200,
+                    r#"{"message": "Check your email to confirm your subscription"}"#,
+                );
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to create pending subscription");
+                return json_response(500, r#"{"error": "Internal server error"}"#);
+            }
+        };
+
     // Send verification email
-    let verify_url = format!("{}/api/verify?token={}", state.base_url, pending.token);
-    let strategy_description = describe_strategy(&strategy);
+    let email_str = email.to_string().to_lowercase();
+    let verify_url = format!(
+        "{}/api/verify?email={}&token={}",
+        state.base_url,
+        urlencoding::encode(&email_str),
+        pending.token
+    );
+    let strategy_description = strategy.description();
 
     if let Err(e) =
         send_verification_email(state, &pending.email, &verify_url, &strategy_description).await
@@ -335,25 +349,34 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
     )
 }
 
-/// GET /api/verify?token=...
+/// GET /api/verify?email=...&token=...
 ///
 /// Verifies a pending subscription and creates the subscriber.
-async fn handle_verify_get(state: &Arc<AppState>, token: &str) -> Response<Body> {
-    if token.is_empty() {
-        return redirect("/verify-error.html");
-    }
+async fn handle_verify_get(
+    state: &Arc<AppState>,
+    maybe_email: &str,
+    maybe_token: &str,
+) -> Response<Body> {
+    let email = match EmailAddress::from_str(maybe_email) {
+        Ok(e) => e,
+        Err(_) => return redirect("/verify-error.html"),
+    };
+    let token = match Token::from_str(maybe_token) {
+        Ok(t) => t,
+        Err(_) => return redirect("/verify-error.html"),
+    };
 
-    match subscribe::verify_subscription(&state.storage, token).await {
+    match subscribe::verify_subscription(&state.storage, &email, &token).await {
         Ok(Some(_subscriber)) => {
-            info!(token = %token, "Subscription verified successfully");
+            info!(email = %email, "Subscription verified successfully");
             redirect("/verify-success.html")
         }
         Ok(None) => {
-            warn!(token = %token, "Verification token not found or expired");
+            warn!(email = %email, "Verification failed: not found, expired, or invalid token");
             redirect("/verify-error.html")
         }
         Err(e) => {
-            error!(error = %e, token = %token, "Error verifying subscription");
+            error!(error = %e, email = %email, "Error verifying subscription");
             redirect("/verify-error.html")
         }
     }
@@ -362,7 +385,7 @@ async fn handle_verify_get(state: &Arc<AppState>, token: &str) -> Response<Body>
 /// Send a verification email to the subscriber.
 async fn send_verification_email(
     state: &Arc<AppState>,
-    email: &str,
+    email: &EmailAddress,
     verify_url: &str,
     strategy_description: &str,
 ) -> anyhow::Result<()> {
@@ -401,7 +424,9 @@ async fn send_verification_email(
 
     let body = SesBody::builder().html(html_body).text(text_body).build();
     let message = Message::builder().subject(subject).body(body).build();
-    let destination = Destination::builder().to_addresses(email).build();
+    let destination = Destination::builder()
+        .to_addresses(email.to_string())
+        .build();
     let email_content = EmailContent::builder().simple(message).build();
 
     let response = state
@@ -417,17 +442,9 @@ async fn send_verification_email(
 
     info!(
         message_id = ?response.message_id(),
-        recipient = email,
+        recipient = %email,
         "Verification email sent"
     );
 
     Ok(())
-}
-
-/// Get a human-readable description of a digest strategy.
-fn describe_strategy(strategy: &DigestStrategy) -> String {
-    match strategy {
-        DigestStrategy::TopN(n) => format!("Top {} stories by points", n),
-        DigestStrategy::OverPointThreshold(t) => format!("All stories with {}+ points", t),
-    }
 }
