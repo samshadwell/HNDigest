@@ -107,18 +107,9 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
         .await
         .map_err(|e| Error::from(e.to_string()))?;
 
-    // Filter to verified subscribers only
-    let verified_subscribers: Vec<_> = subscribers
-        .into_iter()
-        .filter(|s| s.verified_at.is_some())
-        .collect();
+    info!(subscribers = subscribers.len(), "Found subscribers");
 
-    info!(
-        subscribers = verified_subscribers.len(),
-        "Found verified subscribers"
-    );
-
-    if verified_subscribers.is_empty() {
+    if subscribers.is_empty() {
         info!("No subscribers to send to");
         return Ok(());
     }
@@ -132,7 +123,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
         }
     };
 
-    let send_results: Vec<_> = stream::iter(verified_subscribers)
+    let send_results: Vec<_> = stream::iter(subscribers)
         .map(|subscriber| {
             let digests = &digests_by_strategy;
             let mailer = &mailer;
@@ -144,7 +135,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
                     Some(posts) if !posts.is_empty() => posts,
                     _ => {
                         info!(
-                            email = subscriber.email,
+                            email = %subscriber.email,
                             strategy = %subscriber.strategy,
                             "No posts for subscriber's strategy, skipping"
                         );

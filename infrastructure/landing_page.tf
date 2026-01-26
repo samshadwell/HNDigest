@@ -184,35 +184,30 @@ resource "aws_s3_bucket_policy" "landing_page" {
   })
 }
 
-# Upload static files
-resource "aws_s3_object" "index_html" {
-  bucket       = aws_s3_bucket.landing_page.id
-  key          = "index.html"
-  source       = "${path.module}/../static/index.html"
-  content_type = "text/html"
-  etag         = filemd5("${path.module}/../static/index.html")
+# Content type mapping by file extension
+locals {
+  content_types = {
+    ".html" = "text/html"
+    ".css"  = "text/css"
+    ".js"   = "application/javascript"
+    ".json" = "application/json"
+    ".png"  = "image/png"
+    ".jpg"  = "image/jpeg"
+    ".jpeg" = "image/jpeg"
+    ".gif"  = "image/gif"
+    ".svg"  = "image/svg+xml"
+    ".ico"  = "image/x-icon"
+    ".txt"  = "text/plain"
+  }
 }
 
-resource "aws_s3_object" "style_css" {
-  bucket       = aws_s3_bucket.landing_page.id
-  key          = "style.css"
-  source       = "${path.module}/../static/style.css"
-  content_type = "text/css"
-  etag         = filemd5("${path.module}/../static/style.css")
-}
+# Upload all static files automatically
+resource "aws_s3_object" "static_files" {
+  for_each = fileset("${path.module}/../static", "**/*")
 
-resource "aws_s3_object" "unsubscribe_success" {
   bucket       = aws_s3_bucket.landing_page.id
-  key          = "unsubscribe-success.html"
-  source       = "${path.module}/../static/unsubscribe-success.html"
-  content_type = "text/html"
-  etag         = filemd5("${path.module}/../static/unsubscribe-success.html")
-}
-
-resource "aws_s3_object" "unsubscribe_error" {
-  bucket       = aws_s3_bucket.landing_page.id
-  key          = "unsubscribe-error.html"
-  source       = "${path.module}/../static/unsubscribe-error.html"
-  content_type = "text/html"
-  etag         = filemd5("${path.module}/../static/unsubscribe-error.html")
+  key          = each.value
+  source       = "${path.module}/../static/${each.value}"
+  content_type = lookup(local.content_types, regex("\\.[^.]+$", each.value), "application/octet-stream")
+  etag         = filemd5("${path.module}/../static/${each.value}")
 }

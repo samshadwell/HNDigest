@@ -4,5 +4,6 @@ pub mod post_fetcher;
 pub mod post_snapshotter;
 pub mod storage_adapter;
 pub mod strategies;
+pub mod subscribe;
 pub mod types;
 pub mod unsubscribe;

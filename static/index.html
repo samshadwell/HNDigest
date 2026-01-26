@@ -11,15 +11,215 @@
             rel="stylesheet"
         />
         <link href="/style.css" rel="stylesheet" />
+        <style>
+            .subscribe-form {
+                margin-top: 40px;
+                max-width: 400px;
+            }
+
+            .form-group {
+                margin-bottom: 20px;
+            }
+
+            .form-group label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 600;
+            }
+
+            .form-group input[type="email"],
+            .form-group select {
+                width: 100%;
+                padding: 12px;
+                font-size: 16px;
+                font-family: inherit;
+                border: 2px solid #ccc;
+                border-radius: 4px;
+                box-sizing: border-box;
+            }
+
+            .form-group input[type="email"]:focus,
+            .form-group select:focus {
+                border-color: #ff6600;
+                outline: none;
+            }
+
+            .submit-btn {
+                background-color: #ff6600;
+                color: white;
+                padding: 12px 24px;
+                font-size: 18px;
+                font-family: inherit;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                width: 100%;
+            }
+
+            .submit-btn:hover {
+                background-color: #e55a00;
+            }
+
+            .submit-btn:disabled {
+                background-color: #ccc;
+                cursor: not-allowed;
+            }
+
+            .message {
+                padding: 12px;
+                border-radius: 4px;
+                margin-top: 20px;
+            }
+
+            .message.success {
+                background-color: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+            }
+
+            .message.error {
+                background-color: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            }
+
+            .website-field {
+                position: absolute;
+                left: -9999px;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                .form-group input[type="email"],
+                .form-group select {
+                    background-color: #333;
+                    color: #fff;
+                    border-color: #555;
+                }
+
+                .message.success {
+                    background-color: #1a3d1a;
+                    color: #9fdf9f;
+                    border-color: #2a5a2a;
+                }
+
+                .message.error {
+                    background-color: #3d1a1a;
+                    color: #df9f9f;
+                    border-color: #5a2a2a;
+                }
+            }
+        </style>
     </head>
 
     <body>
         <div class="hero">
             <h1>HNDigest</h1>
             <p>
-                Coming soon: your daily Hacker News digest, delivered to your
-                inbox.
+                Your daily Hacker News digest, delivered to your inbox every
+                morning.
             </p>
         </div>
+
+        <form class="subscribe-form" id="subscribe-form">
+            <div class="form-group">
+                <label for="email">Email address</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    required
+                    placeholder="you@example.com"
+                />
+            </div>
+
+            <div class="form-group">
+                <label for="strategy">Digest type</label>
+                <select id="strategy" name="strategy" required>
+                    <option value="TOP_N#10">Top 10 stories by points</option>
+                    <option value="TOP_N#20">Top 20 stories by points</option>
+                    <option value="TOP_N#50">Top 50 stories by points</option>
+                    <option value="POINT_THRESHOLD#500">
+                        All stories with 500+ points
+                    </option>
+                    <option value="POINT_THRESHOLD#250">
+                        All stories with 250+ points
+                    </option>
+                    <option value="POINT_THRESHOLD#100">
+                        All stories with 100+ points
+                    </option>
+                </select>
+            </div>
+
+            <div class="website-field" aria-hidden="true">
+                <label for="website">Website</label>
+                <input
+                    type="text"
+                    id="website"
+                    name="website"
+                    tabindex="-1"
+                    autocomplete="off"
+                />
+            </div>
+
+            <button type="submit" class="submit-btn" id="submit-btn">
+                Subscribe
+            </button>
+
+            <div id="message" class="message" style="display: none"></div>
+        </form>
+
+        <script>
+            const form = document.getElementById("subscribe-form");
+            const submitBtn = document.getElementById("submit-btn");
+            const messageDiv = document.getElementById("message");
+
+            form.addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                // Disable button and show loading state
+                submitBtn.disabled = true;
+                submitBtn.textContent = "Subscribing...";
+                messageDiv.style.display = "none";
+
+                const formData = {
+                    email: document.getElementById("email").value,
+                    strategy: document.getElementById("strategy").value,
+                    website: document.getElementById("website").value,
+                };
+
+                try {
+                    const response = await fetch("/api/subscribe", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(formData),
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        messageDiv.className = "message success";
+                        messageDiv.textContent =
+                            data.message ||
+                            "Check your email to confirm your subscription.";
+                        form.reset();
+                    } else {
+                        messageDiv.className = "message error";
+                        messageDiv.textContent =
+                            data.error ||
+                            "Something went wrong. Please try again.";
+                    }
+                } catch (error) {
+                    messageDiv.className = "message error";
+                    messageDiv.textContent =
+                        "Something went wrong. Please try again.";
+                }
+
+                messageDiv.style.display = "block";
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Subscribe";
+            });
+        </script>
     </body>
 </html>

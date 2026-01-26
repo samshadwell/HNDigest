@@ -46,6 +46,14 @@ impl DigestStrategy {
                 .collect(),
         }
     }
+
+    /// Get a human-readable description of this digest strategy.
+    pub fn description(&self) -> String {
+        match self {
+            Self::TopN(n) => format!("Top {} stories by points", n),
+            Self::OverPointThreshold(t) => format!("All stories with {}+ points", t),
+        }
+    }
 }
 
 impl FromStr for DigestStrategy {

@@ -1,14 +1,16 @@
 use crate::strategies::DigestStrategy;
-use crate::types::{Post, Subscriber};
+use crate::types::{PendingSubscription, Post, Subscriber, Token};
 use anyhow::{Context, Result};
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
 use chrono::{DateTime, Duration, Utc};
+use email_address::EmailAddress;
 use std::collections::HashMap;
 use std::str::FromStr;
 
 const SNAPSHOT_PARTITION_KEY: &str = "POSTS_SNAPSHOT";
 const DIGEST_PARTITION_KEY_PREFIX: &str = "DIGEST";
 const SUBSCRIBER_PARTITION_KEY: &str = "SUBSCRIBER";
+const PENDING_SUBSCRIPTION_PARTITION_KEY: &str = "PENDING_SUBSCRIPTION";
 const MODEL_TTL_DAYS: i64 = 30;
 const UNSUBSCRIBE_TOKEN_INDEX: &str = "unsubscribe_token_index";
 
@@ -119,7 +121,10 @@ impl StorageAdapter {
     /// Get a subscriber by their unsubscribe token.
     /// Returns None if no subscriber exists with this token.
     /// Fails if multiple subscribers have the same token (should never happen).
-    pub async fn get_subscriber_by_token(&self, token: &str) -> Result<Option<Subscriber>> {
+    pub async fn get_subscriber_by_unsubscribe_token(
+        &self,
+        token: &Token,
+    ) -> Result<Option<Subscriber>> {
         let output = self
             .client
             .query()
@@ -189,20 +194,15 @@ impl StorageAdapter {
     }
 
     /// Create or update a subscriber record.
-    pub async fn set_subscriber(&self, subscriber: &Subscriber) -> Result<()> {
-        let mut item = HashMap::from([
+    pub async fn upsert_subscriber(&self, subscriber: &Subscriber) -> Result<()> {
+        let email_str = subscriber.email.to_string().to_lowercase();
+        let item = HashMap::from([
             (
                 "PK".to_string(),
                 AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
             ),
-            (
-                "SK".to_string(),
-                AttributeValue::S(subscriber.email.to_lowercase()),
-            ),
-            (
-                "email".to_string(),
-                AttributeValue::S(subscriber.email.to_lowercase()),
-            ),
+            ("SK".to_string(), AttributeValue::S(email_str.clone())),
+            ("email".to_string(), AttributeValue::S(email_str)),
             (
                 "strategy".to_string(),
                 AttributeValue::S(subscriber.strategy.to_string()),
@@ -217,13 +217,6 @@ impl StorageAdapter {
             ),
         ]);
 
-        if let Some(verified_at) = subscriber.verified_at {
-            item.insert(
-                "verified_at".to_string(),
-                AttributeValue::S(verified_at.to_rfc3339()),
-            );
-        }
-
         self.client
             .put_item()
             .table_name(&self.table_name)
@@ -236,7 +229,7 @@ impl StorageAdapter {
     }
 
     /// Remove a subscriber by email address.
-    pub async fn remove_subscriber(&self, email: &str) -> Result<()> {
+    pub async fn remove_subscriber(&self, email: &EmailAddress) -> Result<()> {
         self.client
             .delete_item()
             .table_name(&self.table_name)
@@ -244,12 +237,116 @@ impl StorageAdapter {
                 "PK",
                 AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
             )
-            .key("SK", AttributeValue::S(email.to_lowercase()))
+            .key("SK", AttributeValue::S(email.to_string().to_lowercase()))
             .send()
             .await
             .context("Failed to remove subscriber")?;
 
         Ok(())
+    }
+
+    /// Create or update a pending subscription record.
+    ///
+    /// Uses email as the sort key, so repeated submissions for the same email
+    /// will overwrite the previous pending subscription (natural upsert).
+    ///
+    /// NOTE: This relies on DynamoDB TTL being configured on the `expires_at`
+    /// attribute for automatic cleanup of expired pending subscriptions.
+    pub async fn upsert_pending_subscription(&self, pending: &PendingSubscription) -> Result<()> {
+        let email_str = pending.email.to_string().to_lowercase();
+        // Note: expires_at is stored as epoch seconds (N) for DynamoDB TTL,
+        // while created_at is stored as RFC3339 string for human readability.
+        let item = HashMap::from([
+            (
+                "PK".to_string(),
+                AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
+            ),
+            ("SK".to_string(), AttributeValue::S(email_str.clone())),
+            (
+                "token".to_string(),
+                AttributeValue::S(pending.token.to_string()),
+            ),
+            ("email".to_string(), AttributeValue::S(email_str)),
+            (
+                "strategy".to_string(),
+                AttributeValue::S(pending.strategy.to_string()),
+            ),
+            (
+                "created_at".to_string(),
+                AttributeValue::S(pending.created_at.to_rfc3339()),
+            ),
+            (
+                "expires_at".to_string(),
+                AttributeValue::N(pending.expires_at.timestamp().to_string()),
+            ),
+        ]);
+
+        self.client
+            .put_item()
+            .table_name(&self.table_name)
+            .set_item(Some(item))
+            .send()
+            .await
+            .context("Failed to create pending subscription")?;
+
+        Ok(())
+    }
+
+    /// Get a pending subscription by email.
+    pub async fn get_pending_subscription(
+        &self,
+        email: &EmailAddress,
+    ) -> Result<Option<PendingSubscription>> {
+        let output = self
+            .client
+            .get_item()
+            .table_name(&self.table_name)
+            .key(
+                "PK",
+                AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
+            )
+            .key("SK", AttributeValue::S(email.to_string().to_lowercase()))
+            .send()
+            .await
+            .context("Failed to get pending subscription")?;
+
+        output.item.map(pending_subscription_from_item).transpose()
+    }
+
+    /// Delete a pending subscription by email.
+    pub async fn delete_pending_subscription(&self, email: &EmailAddress) -> Result<()> {
+        self.client
+            .delete_item()
+            .table_name(&self.table_name)
+            .key(
+                "PK",
+                AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
+            )
+            .key("SK", AttributeValue::S(email.to_string().to_lowercase()))
+            .send()
+            .await
+            .context("Failed to delete pending subscription")?;
+
+        Ok(())
+    }
+
+    /// Check if a subscriber already exists with this email address.
+    pub async fn subscriber_exists(&self, email: &EmailAddress) -> Result<bool> {
+        let output = self
+            .client
+            .get_item()
+            .table_name(&self.table_name)
+            .key(
+                "PK",
+                AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
+            )
+            .key("SK", AttributeValue::S(email.to_string().to_lowercase()))
+            .projection_expression("email")
+            .send()
+            .await
+            .context("Failed to check subscriber existence")?;
+
+        Ok(output.item.is_some())
     }
 }
 
@@ -320,11 +417,11 @@ fn av_to_json(av: &AttributeValue) -> Result<serde_json::Value> {
 
 /// Convert a DynamoDB item to a Subscriber struct.
 fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscriber> {
-    let email = item
+    let email_str = item
         .get("email")
         .and_then(|v| v.as_s().ok())
-        .ok_or_else(|| anyhow::anyhow!("Missing email field"))?
-        .clone();
+        .ok_or_else(|| anyhow::anyhow!("Missing email field"))?;
+    let email = EmailAddress::from_str(email_str).context("Invalid email address in database")?;
 
     let strategy_str = item
         .get("strategy")
@@ -339,24 +436,65 @@ fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscri
         .parse::<DateTime<Utc>>()
         .context("Invalid subscribed_at timestamp")?;
 
-    let verified_at = item
-        .get("verified_at")
-        .and_then(|v| v.as_s().ok())
-        .map(|s| s.parse::<DateTime<Utc>>())
-        .transpose()
-        .context("Invalid verified_at timestamp")?;
-
     let unsubscribe_token = item
         .get("unsubscribe_token")
         .and_then(|v| v.as_s().ok())
         .ok_or_else(|| anyhow::anyhow!("Missing unsubscribe_token field"))?
-        .clone();
+        .parse::<Token>()
+        .map_err(|e| anyhow::anyhow!("Invalid unsubscribe_token: {}", e))?;
 
     Ok(Subscriber {
         email,
         strategy,
         subscribed_at,
-        verified_at,
         unsubscribe_token,
+    })
+}
+
+/// Convert a DynamoDB item to a PendingSubscription struct.
+fn pending_subscription_from_item(
+    item: HashMap<String, AttributeValue>,
+) -> Result<PendingSubscription> {
+    let token = item
+        .get("token")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing token field"))?
+        .parse::<Token>()
+        .map_err(|e| anyhow::anyhow!("Invalid token: {}", e))?;
+
+    let email_str = item
+        .get("email")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing email field"))?;
+    let email = EmailAddress::from_str(email_str).context("Invalid email address in database")?;
+
+    let strategy_str = item
+        .get("strategy")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing strategy field"))?;
+    let strategy = DigestStrategy::from_str(strategy_str).context("Invalid strategy value")?;
+
+    let created_at = item
+        .get("created_at")
+        .and_then(|v| v.as_s().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing created_at field"))?
+        .parse::<DateTime<Utc>>()
+        .context("Invalid created_at timestamp")?;
+
+    let expires_at_ts = item
+        .get("expires_at")
+        .and_then(|v| v.as_n().ok())
+        .ok_or_else(|| anyhow::anyhow!("Missing expires_at field"))?
+        .parse::<i64>()
+        .context("Invalid expires_at timestamp")?;
+    let expires_at = DateTime::from_timestamp(expires_at_ts, 0)
+        .ok_or_else(|| anyhow::anyhow!("Invalid expires_at timestamp value"))?;
+
+    Ok(PendingSubscription {
+        token,
+        email,
+        strategy,
+        created_at,
+        expires_at,
     })
 }

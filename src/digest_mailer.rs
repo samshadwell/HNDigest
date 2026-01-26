@@ -2,6 +2,7 @@ use aws_sdk_sesv2::Client;
 use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message, MessageHeader};
 
 use anyhow::{Context, Result};
+use email_address::EmailAddress;
 use tracing::info;
 
 pub struct DigestMailer {
@@ -25,7 +26,7 @@ impl DigestMailer {
         subject: &str,
         html_content: &str,
         text_content: &str,
-        recipient: &str,
+        recipient: &EmailAddress,
         unsubscribe_url: &str,
     ) -> Result<()> {
         // Build RFC 8058 List-Unsubscribe headers
@@ -58,7 +59,9 @@ impl DigestMailer {
             .headers(list_unsubscribe_post_header)
             .build();
 
-        let destination = Destination::builder().to_addresses(recipient).build();
+        let destination = Destination::builder()
+            .to_addresses(recipient.to_string())
+            .build();
 
         let email_content = EmailContent::builder().simple(message).build();
 
@@ -75,7 +78,7 @@ impl DigestMailer {
 
         info!(
             message_id = ?response.message_id(),
-            recipient = recipient,
+            recipient = %recipient,
             "Email sent"
         );
 

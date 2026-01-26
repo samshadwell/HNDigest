@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use aws_config::BehaviorVersion;
-use chrono::Utc;
+use email_address::EmailAddress;
 use hndigest::storage_adapter::StorageAdapter;
 use hndigest::strategies::DigestStrategy;
 use hndigest::types::Subscriber;
@@ -19,9 +19,8 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    let email = &args[1];
+    let email = EmailAddress::from_str(&args[1]).context("Invalid email address")?;
     let strategy_str = if args.len() > 2 { &args[2] } else { "TOP_N#10" };
-
     let strategy = DigestStrategy::from_str(strategy_str).context("Invalid strategy")?;
 
     let dynamodb_table =
@@ -32,13 +31,11 @@ async fn main() -> Result<()> {
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
 
-    println!("Creating verified subscriber for {}", email);
-    let mut subscriber = Subscriber::new(email.to_string(), strategy);
-    subscriber.verified_at = Some(Utc::now());
+    println!("Creating subscriber for {}", email);
+    let subscriber = Subscriber::new(email, strategy);
+    storage_adapter.upsert_subscriber(&subscriber).await?;
 
-    storage_adapter.set_subscriber(&subscriber).await?;
-
-    println!("Successfully added verified subscriber:");
+    println!("Successfully added subscriber:");
     println!("  Email: {}", subscriber.email);
     println!("  Strategy: {}", subscriber.strategy);
     println!("  Unsubscribe Token: {}", subscriber.unsubscribe_token);
