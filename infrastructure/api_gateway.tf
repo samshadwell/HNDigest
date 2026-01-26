@@ -17,8 +17,8 @@ resource "aws_apigatewayv2_stage" "default" {
   auto_deploy = true
 
   default_route_settings {
-    throttling_burst_limit = 100
-    throttling_rate_limit  = 10
+    throttling_burst_limit = 50
+    throttling_rate_limit  = 5
   }
 
   access_log_settings {
@@ -52,6 +52,24 @@ resource "aws_apigatewayv2_integration" "lambda" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.hndigest_api[each.key].invoke_arn
   payload_format_version = "2.0"
+}
+
+# Route for subscribe endpoint
+resource "aws_apigatewayv2_route" "subscribe_post" {
+  for_each = local.environments
+
+  api_id    = aws_apigatewayv2_api.hndigest[each.key].id
+  route_key = "POST /api/subscribe"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda[each.key].id}"
+}
+
+# Route for verify endpoint
+resource "aws_apigatewayv2_route" "verify_get" {
+  for_each = local.environments
+
+  api_id    = aws_apigatewayv2_api.hndigest[each.key].id
+  route_key = "GET /api/verify"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda[each.key].id}"
 }
 
 # Routes for unsubscribe endpoints
