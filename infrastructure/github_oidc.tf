@@ -150,6 +150,18 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Resource = "arn:aws:logs:*:*:log-group:*"
       },
       {
+        Sid    = "APIGatewayLogDelivery"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogDelivery",
+          "logs:UpdateLogDelivery",
+          "logs:DeleteLogDelivery",
+          "logs:GetLogDelivery",
+          "logs:ListLogDeliveries"
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "LandingPageS3"
         Effect = "Allow"
         Action = "s3:*"
