@@ -43,6 +43,8 @@ pub async fn create_pending_subscription(
 /// Returns `Ok(Some(subscriber))` if the subscription was verified successfully,
 /// `Ok(None)` if no pending subscription exists or the token doesn't match.
 /// Returns an error if a database error occurs.
+///
+/// This is idempotent: if the token is valid and already verified, returns success.
 pub async fn verify_subscription(
     storage: &Arc<StorageAdapter>,
     email: &EmailAddress,
@@ -53,14 +55,25 @@ pub async fn verify_subscription(
         None => return Ok(None),
     };
 
+    // Check token first (before verified_at) to prevent email enumeration
     if &pending.token != token {
         return Ok(None);
     }
 
-    // Create verified subscriber and clean up pending subscription
-    let subscriber = Subscriber::new(pending.email, pending.strategy);
+    // This check mostly exists to avoid generating a new unsubscribe token and
+    // invalidating any already-existing unsubscribe links
+    if pending.verified_at.is_some() {
+        return Ok(Some(Subscriber::new(pending.email, pending.strategy)));
+    }
+
+    let subscriber = Subscriber::new(pending.email.clone(), pending.strategy);
     storage.upsert_subscriber(&subscriber).await?;
-    storage.delete_pending_subscription(email).await?;
+
+    let mut verified_pending = pending;
+    verified_pending.verified_at = Some(chrono::Utc::now());
+    storage
+        .upsert_pending_subscription(&verified_pending)
+        .await?;
 
     Ok(Some(subscriber))
 }
