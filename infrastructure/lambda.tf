@@ -69,6 +69,8 @@ resource "aws_lambda_function" "hndigest_api" {
       RUST_LOG       = "info"
       DYNAMODB_TABLE = each.value.table_name
       BASE_URL       = "https://${each.value.domain}"
+      EMAIL_FROM     = each.value.from_email
+      EMAIL_REPLY_TO = each.value.reply_to_email
     }
   }
 
