@@ -58,6 +58,27 @@ struct SubscribeRequest {
     strategy: String,
     #[serde(default)]
     website: String, // Honeypot field - should be empty
+    #[serde(default)]
+    turnstile_token: String,
+}
+
+/// Response from Cloudflare Turnstile siteverify API.
+#[derive(Debug, Deserialize)]
+struct TurnstileVerifyResponse {
+    success: bool,
+}
+
+/// Response from the AWS Parameters and Secrets Lambda Extension.
+#[derive(Debug, Deserialize)]
+struct SsmExtensionResponse {
+    #[serde(rename = "Parameter")]
+    parameter: SsmParameterValue,
+}
+
+#[derive(Debug, Deserialize)]
+struct SsmParameterValue {
+    #[serde(rename = "Value")]
+    value: String,
 }
 
 // ============================================================================
@@ -113,9 +134,11 @@ fn body_to_string(body: &Body) -> Option<String> {
 struct AppState {
     storage: Arc<StorageAdapter>,
     ses_client: SesClient,
+    http_client: reqwest::Client,
     from_address: String,
     reply_to_address: String,
     base_url: String,
+    turnstile_secret_key: String,
 }
 
 #[tokio::main]
@@ -137,14 +160,27 @@ async fn main() -> Result<(), Error> {
         .map_err(|_| Error::from("EMAIL_REPLY_TO environment variable must be set"))?;
     let base_url = env::var("BASE_URL")
         .map_err(|_| Error::from("BASE_URL environment variable must be set"))?;
+    let turnstile_secret_key_param = env::var("TURNSTILE_SECRET_KEY_PARAM")
+        .map_err(|_| Error::from("TURNSTILE_SECRET_KEY_PARAM environment variable must be set"))?;
 
+    let http_client = reqwest::Client::new();
+    let turnstile_secret_key = fetch_ssm_parameter(&http_client, &turnstile_secret_key_param)
+        .await
+        .map_err(|e| {
+            Error::from(format!(
+                "Failed to fetch SSM parameter {}: {}",
+                turnstile_secret_key_param, e
+            ))
+        })?;
     let storage = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
     let state = Arc::new(AppState {
         storage,
         ses_client,
+        http_client,
         from_address,
         reply_to_address,
         base_url,
+        turnstile_secret_key,
     });
 
     run(service_fn(|event| handler(event, state.clone()))).await
@@ -269,6 +305,43 @@ async fn handle_unsubscribe_post(
     }
 }
 
+/// Fetch a parameter from SSM via the AWS Parameters and Secrets Lambda Extension.
+/// The extension runs as a Lambda layer and serves requests on localhost:2773.
+async fn fetch_ssm_parameter(
+    http_client: &reqwest::Client,
+    parameter_name: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let session_token = env::var("AWS_SESSION_TOKEN")?;
+    let response: SsmExtensionResponse = http_client
+        .get(format!(
+            "http://localhost:2773/systemsmanager/parameters/get?name={}&withDecryption=true",
+            urlencoding::encode(parameter_name)
+        ))
+        .header("X-Aws-Parameters-Secrets-Token", &session_token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(response.parameter.value)
+}
+
+/// Verify a Cloudflare Turnstile CAPTCHA token.
+async fn verify_turnstile_token(
+    http_client: &reqwest::Client,
+    secret_key: &str,
+    token: &str,
+) -> Result<bool, reqwest::Error> {
+    let params = [("secret", secret_key), ("response", token)];
+    let response = http_client
+        .post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
+        .form(&params)
+        .send()
+        .await?;
+    let body: TurnstileVerifyResponse = response.json().await?;
+    Ok(body.success)
+}
+
 /// POST /api/subscribe
 ///
 /// Creates a pending subscription and sends a verification email.
@@ -306,6 +379,29 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
         Ok(e) => e,
         Err(_) => return json_response(400, r#"{"error": "Invalid email address"}"#),
     };
+
+    // Verify Turnstile CAPTCHA token
+    if request.turnstile_token.is_empty() {
+        warn!("Missing Turnstile CAPTCHA token");
+        return json_response(400, r#"{"error": "CAPTCHA verification required"}"#);
+    }
+    match verify_turnstile_token(
+        &state.http_client,
+        &state.turnstile_secret_key,
+        &request.turnstile_token,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => {
+            warn!("Turnstile CAPTCHA verification failed");
+            return json_response(400, r#"{"error": "CAPTCHA verification failed"}"#);
+        }
+        Err(e) => {
+            error!(error = %e, "Turnstile API request failed");
+            return json_response(500, r#"{"error": "CAPTCHA verification unavailable"}"#);
+        }
+    }
 
     // Create pending subscription
     let pending =
