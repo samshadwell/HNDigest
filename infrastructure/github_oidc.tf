@@ -201,6 +201,12 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Resource = [for k, _ in local.environments : aws_ssm_parameter.turnstile_secret_key[k].arn]
       },
       {
+        Sid      = "SSMDescribe"
+        Effect   = "Allow"
+        Action   = "ssm:DescribeParameters"
+        Resource = "*"
+      },
+      {
         Sid    = "KMS"
         Effect = "Allow"
         Action = [
