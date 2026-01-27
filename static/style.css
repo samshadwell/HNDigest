@@ -33,6 +33,7 @@ button {
     font-size: 20px;
     padding: 12px 32px;
     transition: background-color 0.2s;
+    margin-top: 16px;
 }
 button:hover {
     background-color: #e55c00;

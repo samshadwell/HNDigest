@@ -50,10 +50,6 @@
                 outline: none;
             }
 
-            .cf-turnstyle {
-                margin-bottom: 16px;
-            }
-
             .message {
                 padding: 12px;
                 border-radius: 4px;
@@ -75,6 +71,10 @@
             .website-field {
                 position: absolute;
                 left: -9999px;
+            }
+
+            .cf-turnstile {
+                margin-top: 20px;
             }
 
             @media (prefers-color-scheme: dark) {
@@ -151,27 +151,22 @@
                 />
             </div>
 
+            <button type="submit" id="submit-btn">Subscribe</button>
+
+            <div id="message" class="message" style="display: none"></div>
+
             <div
                 class="cf-turnstile"
                 data-sitekey="${turnstile_site_key}"
-                data-callback="onTurnstileSuccess"
                 data-appearance="interaction-only"
                 id="turnstile-widget"
             ></div>
-
-            <button type="submit" id="submit-btn" disabled>Subscribe</button>
-
-            <div id="message" class="message" style="display: none"></div>
         </form>
 
         <script>
             const form = document.getElementById("subscribe-form");
             const submitBtn = document.getElementById("submit-btn");
             const messageDiv = document.getElementById("message");
-
-            function onTurnstileSuccess() {
-                submitBtn.disabled = false;
-            }
 
             form.addEventListener("submit", async (e) => {
                 e.preventDefault();
@@ -188,7 +183,7 @@
                 if (!turnstileResponse) {
                     messageDiv.className = "message error";
                     messageDiv.textContent =
-                        "Please complete the CAPTCHA challenge.";
+                        "Please wait a moment and try again.";
                     messageDiv.style.display = "block";
                     submitBtn.disabled = false;
                     submitBtn.textContent = "Subscribe";
