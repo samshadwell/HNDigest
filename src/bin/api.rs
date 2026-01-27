@@ -138,7 +138,8 @@ struct AppState {
     from_address: String,
     reply_to_address: String,
     base_url: String,
-    turnstile_secret_key: String,
+    turnstile_secret_key_param: String,
+    turnstile_secret_key: tokio::sync::OnceCell<String>,
 }
 
 #[tokio::main]
@@ -164,14 +165,6 @@ async fn main() -> Result<(), Error> {
         .map_err(|_| Error::from("TURNSTILE_SECRET_KEY_PARAM environment variable must be set"))?;
 
     let http_client = reqwest::Client::new();
-    let turnstile_secret_key = fetch_ssm_parameter(&http_client, &turnstile_secret_key_param)
-        .await
-        .map_err(|e| {
-            Error::from(format!(
-                "Failed to fetch SSM parameter {}: {}",
-                turnstile_secret_key_param, e
-            ))
-        })?;
     let storage = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
     let state = Arc::new(AppState {
         storage,
@@ -180,7 +173,8 @@ async fn main() -> Result<(), Error> {
         from_address,
         reply_to_address,
         base_url,
-        turnstile_secret_key,
+        turnstile_secret_key_param,
+        turnstile_secret_key: tokio::sync::OnceCell::new(),
     });
 
     run(service_fn(|event| handler(event, state.clone()))).await
@@ -392,9 +386,25 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
         warn!("Missing Turnstile CAPTCHA token");
         return json_response(400, r#"{"error": "CAPTCHA verification required"}"#);
     }
+
+    // Lazily fetch the Turnstile secret key (cached after first request)
+    let turnstile_secret_key = match state
+        .turnstile_secret_key
+        .get_or_try_init(|| async {
+            fetch_ssm_parameter(&state.http_client, &state.turnstile_secret_key_param).await
+        })
+        .await
+    {
+        Ok(key) => key,
+        Err(e) => {
+            error!(error = %e, "Failed to fetch Turnstile secret key");
+            return json_response(500, r#"{"error": "Internal server error"}"#);
+        }
+    };
+
     match verify_turnstile_token(
         &state.http_client,
-        &state.turnstile_secret_key,
+        turnstile_secret_key,
         &request.turnstile_token,
     )
     .await
