@@ -11,6 +11,12 @@
             rel="stylesheet"
         />
         <link href="/style.css" rel="stylesheet" />
+        <link rel="preconnect" href="https://challenges.cloudflare.com" />
+        <script
+            src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+            async
+            defer
+        ></script>
         <style>
             .subscribe-form {
                 margin-top: 40px;
@@ -141,7 +147,14 @@
                 />
             </div>
 
-            <button type="submit" id="submit-btn">Subscribe</button>
+            <div
+                class="cf-turnstile"
+                data-sitekey="${turnstile_site_key}"
+                data-callback="onTurnstileSuccess"
+                id="turnstile-widget"
+            ></div>
+
+            <button type="submit" id="submit-btn" disabled>Subscribe</button>
 
             <div id="message" class="message" style="display: none"></div>
         </form>
@@ -151,6 +164,10 @@
             const submitBtn = document.getElementById("submit-btn");
             const messageDiv = document.getElementById("message");
 
+            function onTurnstileSuccess() {
+                submitBtn.disabled = false;
+            }
+
             form.addEventListener("submit", async (e) => {
                 e.preventDefault();
 
@@ -159,10 +176,25 @@
                 submitBtn.textContent = "Subscribing...";
                 messageDiv.style.display = "none";
 
+                const turnstileResponse =
+                    document.querySelector('[name="cf-turnstile-response"]')
+                        ?.value || "";
+
+                if (!turnstileResponse) {
+                    messageDiv.className = "message error";
+                    messageDiv.textContent =
+                        "Please complete the CAPTCHA challenge.";
+                    messageDiv.style.display = "block";
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "Subscribe";
+                    return;
+                }
+
                 const formData = {
                     email: document.getElementById("email").value,
                     strategy: document.getElementById("strategy").value,
                     website: document.getElementById("website").value,
+                    turnstile_token: turnstileResponse,
                 };
 
                 try {
@@ -194,9 +226,13 @@
                         "Something went wrong. Please try again.";
                 }
 
+                // Turnstile tokens are single-use, so always reset the widget
                 messageDiv.style.display = "block";
                 submitBtn.disabled = false;
                 submitBtn.textContent = "Subscribe";
+                if (typeof turnstile !== "undefined") {
+                    turnstile.reset("#turnstile-widget");
+                }
             });
         </script>
     </body>

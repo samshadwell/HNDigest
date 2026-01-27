@@ -193,6 +193,21 @@ resource "aws_iam_role_policy" "github_actions_infra" {
           [for k, _ in local.environments : aws_apigatewayv2_api.hndigest[k].arn],
           [for k, _ in local.environments : "${aws_apigatewayv2_api.hndigest[k].arn}/*"]
         )
+      },
+      {
+        Sid      = "SSM"
+        Effect   = "Allow"
+        Action   = "ssm:*"
+        Resource = [for k, _ in local.environments : aws_ssm_parameter.turnstile_secret_key[k].arn]
+      },
+      {
+        Sid    = "KMS"
+        Effect = "Allow"
+        Action = [
+          "kms:ListAliases",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
       }
     ]
   })

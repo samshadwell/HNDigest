@@ -201,13 +201,26 @@ locals {
   }
 }
 
-# Upload all static files automatically
+# Upload static files (except index.html which is templated separately)
 resource "aws_s3_object" "static_files" {
-  for_each = fileset("${path.module}/../static", "**/*")
+  for_each = { for f in fileset("${path.module}/../static", "**/*") : f => f if f != "index.html" }
 
   bucket       = aws_s3_bucket.landing_page.id
   key          = each.value
   source       = "${path.module}/../static/${each.value}"
   content_type = lookup(local.content_types, regex("\\.[^.]+$", each.value), "application/octet-stream")
   etag         = filemd5("${path.module}/../static/${each.value}")
+}
+
+# index.html is templated to inject the Turnstile site key
+resource "aws_s3_object" "index_html" {
+  bucket = aws_s3_bucket.landing_page.id
+  key    = "index.html"
+  content = templatefile("${path.module}/../static/index.html", {
+    turnstile_site_key = var.turnstile_site_key
+  })
+  content_type = "text/html"
+  etag = md5(templatefile("${path.module}/../static/index.html", {
+    turnstile_site_key = var.turnstile_site_key
+  }))
 }

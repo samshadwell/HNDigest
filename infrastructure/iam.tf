@@ -56,6 +56,34 @@ resource "aws_iam_role_policy" "dynamodb_access" {
   })
 }
 
+# SSM Parameter Store access (for secrets)
+resource "aws_iam_role_policy" "ssm_access" {
+  for_each = local.environments
+
+  name = "${lower(var.project_name)}${each.value.name_suffix}-ssm-access"
+  role = aws_iam_role.lambda_exec[each.key].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter"
+        ]
+        Resource = aws_ssm_parameter.turnstile_secret_key[each.key].arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = data.aws_kms_alias.ssm.target_key_arn
+      }
+    ]
+  })
+}
+
 # SES sending policy
 resource "aws_iam_role_policy" "ses_access" {
   for_each = local.environments

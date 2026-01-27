@@ -64,13 +64,17 @@ resource "aws_lambda_function" "hndigest_api" {
   memory_size = var.lambda_memory_size
   timeout     = var.lambda_timeout
 
+  layers = [var.params_secrets_extension_arn]
+
   environment {
     variables = {
-      RUST_LOG       = "info"
-      DYNAMODB_TABLE = each.value.table_name
-      BASE_URL       = "https://${each.value.domain}"
-      EMAIL_FROM     = each.value.from_email
-      EMAIL_REPLY_TO = each.value.reply_to_email
+      RUST_LOG                               = "info"
+      DYNAMODB_TABLE                         = each.value.table_name
+      BASE_URL                               = "https://${each.value.domain}"
+      EMAIL_FROM                             = each.value.from_email
+      EMAIL_REPLY_TO                         = each.value.reply_to_email
+      TURNSTILE_SECRET_KEY_PARAM             = aws_ssm_parameter.turnstile_secret_key[each.key].name
+      PARAMETERS_SECRETS_EXTENSION_LOG_LEVEL = "warn"
     }
   }
 

@@ -68,6 +68,22 @@ variable "ses_staging_from_email" {
 }
 
 ###
+# Anti-bot config
+###
+variable "turnstile_site_key" {
+  description = "Cloudflare Turnstile site key (public, embedded in frontend)"
+  type        = string
+  default     = "0x4AAAAAACTuSJcLuENs4joL"
+}
+
+variable "params_secrets_extension_arn" {
+  description = "Full ARN of the AWS Parameters and Secrets Lambda Extension layer (region- and architecture-specific)"
+  type        = string
+  # This is for us-west-2, x86. See: https://docs.aws.amazon.com/systems-manager/latest/userguide/ps-integration-lambda-extensions.html#ps-integration-lambda-extensions-add
+  default = "arn:aws:lambda:us-west-2:345057560386:layer:AWS-Parameters-and-Secrets-Lambda-Extension:24"
+}
+
+###
 # Hosting config
 ###
 variable "landing_page_domain" {
