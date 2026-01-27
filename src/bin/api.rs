@@ -8,6 +8,7 @@ use askama::Template;
 use aws_config::BehaviorVersion;
 use aws_sdk_sesv2::Client as SesClient;
 use aws_sdk_sesv2::types::{Body as SesBody, Content, Destination, EmailContent, Message};
+use aws_sdk_ssm::Client as SsmClient;
 use email_address::EmailAddress;
 use hndigest::storage_adapter::StorageAdapter;
 use hndigest::strategies::DigestStrategy;
@@ -68,19 +69,6 @@ struct TurnstileVerifyResponse {
     success: bool,
 }
 
-/// Response from the AWS Parameters and Secrets Lambda Extension.
-#[derive(Debug, Deserialize)]
-struct SsmExtensionResponse {
-    #[serde(rename = "Parameter")]
-    parameter: SsmParameterValue,
-}
-
-#[derive(Debug, Deserialize)]
-struct SsmParameterValue {
-    #[serde(rename = "Value")]
-    value: String,
-}
-
 // ============================================================================
 // HTTP Response Helpers
 // ============================================================================
@@ -138,8 +126,7 @@ struct AppState {
     from_address: String,
     reply_to_address: String,
     base_url: String,
-    turnstile_secret_key_param: String,
-    turnstile_secret_key: tokio::sync::OnceCell<String>,
+    turnstile_secret_key: String,
 }
 
 #[tokio::main]
@@ -161,8 +148,26 @@ async fn main() -> Result<(), Error> {
         .map_err(|_| Error::from("EMAIL_REPLY_TO environment variable must be set"))?;
     let base_url = env::var("BASE_URL")
         .map_err(|_| Error::from("BASE_URL environment variable must be set"))?;
+
+    // I'd love to pass this as an environment variable, but using AWS secrets manager is expensive
+    // and this is effectively free
+    let ssm_client = SsmClient::new(&config);
     let turnstile_secret_key_param = env::var("TURNSTILE_SECRET_KEY_PARAM")
         .map_err(|_| Error::from("TURNSTILE_SECRET_KEY_PARAM environment variable must be set"))?;
+    let turnstile_secret_key = ssm_client
+        .get_parameter()
+        .name(&turnstile_secret_key_param)
+        .with_decryption(true)
+        .send()
+        .await?
+        .parameter()
+        .and_then(|p| p.value.clone())
+        .ok_or_else(|| {
+            anyhow::format_err!(
+                "SSM parameter value not found for name {}",
+                turnstile_secret_key_param
+            )
+        })?;
 
     let http_client = reqwest::Client::new();
     let storage = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
@@ -173,8 +178,7 @@ async fn main() -> Result<(), Error> {
         from_address,
         reply_to_address,
         base_url,
-        turnstile_secret_key_param,
-        turnstile_secret_key: tokio::sync::OnceCell::new(),
+        turnstile_secret_key,
     });
 
     run(service_fn(|event| handler(event, state.clone()))).await
@@ -299,34 +303,6 @@ async fn handle_unsubscribe_post(
     }
 }
 
-/// Fetch a parameter from SSM via the AWS Parameters and Secrets Lambda Extension.
-/// The extension runs as a Lambda layer and serves requests on localhost:2773.
-async fn fetch_ssm_parameter(
-    http_client: &reqwest::Client,
-    parameter_name: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let session_token = env::var("AWS_SESSION_TOKEN")?;
-    let params = [("name", parameter_name), ("withDecryption", "true")];
-    let response = http_client
-        .get("http://localhost:2773/systemsmanager/parameters/get")
-        .query(&params)
-        .header("X-Aws-Parameters-Secrets-Token", &session_token)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "<no body>".to_string());
-        return Err(format!("SSM fetch failed {}: {}", status, text).into());
-    }
-
-    let response: SsmExtensionResponse = response.json().await?;
-    Ok(response.parameter.value)
-}
-
 /// Verify a Cloudflare Turnstile CAPTCHA token.
 async fn verify_turnstile_token(
     http_client: &reqwest::Client,
@@ -387,24 +363,9 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
         return json_response(400, r#"{"error": "CAPTCHA verification required"}"#);
     }
 
-    // Lazily fetch the Turnstile secret key (cached after first request)
-    let turnstile_secret_key = match state
-        .turnstile_secret_key
-        .get_or_try_init(|| async {
-            fetch_ssm_parameter(&state.http_client, &state.turnstile_secret_key_param).await
-        })
-        .await
-    {
-        Ok(key) => key,
-        Err(e) => {
-            error!(error = %e, "Failed to fetch Turnstile secret key");
-            return json_response(500, r#"{"error": "Internal server error"}"#);
-        }
-    };
-
     match verify_turnstile_token(
         &state.http_client,
-        turnstile_secret_key,
+        &state.turnstile_secret_key,
         &request.turnstile_token,
     )
     .await

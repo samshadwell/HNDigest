@@ -22,9 +22,10 @@ path = "src/bin/add_subscriber.rs"
 anyhow = "1.0"
 email_address = "0.2"
 askama = "0.15"
-aws-config = { version = "1.1.7", features = ["rustls"] }
-aws-sdk-dynamodb = "1.16.0"
-aws-sdk-sesv2 = "1.14.0"
+aws-config = { version = "1.8.12", features = ["rustls"] }
+aws-sdk-dynamodb = "1.103.0"
+aws-sdk-sesv2 = "1.111.0"
+aws-sdk-ssm = "1.102.0"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 lambda_http = "1.0.2"
