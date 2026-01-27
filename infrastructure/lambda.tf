@@ -27,12 +27,13 @@ resource "aws_lambda_function" "hndigest" {
   environment {
     variables = merge(
       {
-        RUST_LOG       = "info"
-        DYNAMODB_TABLE = each.value.table_name
-        EMAIL_FROM     = each.value.from_email
-        EMAIL_REPLY_TO = each.value.reply_to_email
-        RUN_HOUR_UTC   = tostring(var.run_hour_utc)
-        BASE_URL       = "https://${each.value.domain}"
+        AWS_LAMBDA_LOG_FORMAT = "json"
+        RUST_LOG              = "info"
+        DYNAMODB_TABLE        = each.value.table_name
+        EMAIL_FROM            = each.value.from_email
+        EMAIL_REPLY_TO        = each.value.reply_to_email
+        RUN_HOUR_UTC          = tostring(var.run_hour_utc)
+        BASE_URL              = "https://${each.value.domain}"
       },
       each.value.subject_prefix != "" ? { SUBJECT_PREFIX = each.value.subject_prefix } : {}
     )
@@ -68,13 +69,14 @@ resource "aws_lambda_function" "hndigest_api" {
 
   environment {
     variables = {
+      AWS_LAMBDA_LOG_FORMAT                  = "json"
       RUST_LOG                               = "info"
+      PARAMETERS_SECRETS_EXTENSION_LOG_LEVEL = "info"
       DYNAMODB_TABLE                         = each.value.table_name
       BASE_URL                               = "https://${each.value.domain}"
       EMAIL_FROM                             = each.value.from_email
       EMAIL_REPLY_TO                         = each.value.reply_to_email
       TURNSTILE_SECRET_KEY_PARAM             = aws_ssm_parameter.turnstile_secret_key[each.key].name
-      PARAMETERS_SECRETS_EXTENSION_LOG_LEVEL = "warn"
     }
   }
 

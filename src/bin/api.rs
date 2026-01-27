@@ -312,11 +312,10 @@ async fn fetch_ssm_parameter(
     parameter_name: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let session_token = env::var("AWS_SESSION_TOKEN")?;
+    let params = [("name", parameter_name), ("withDecryption", "true")];
     let response: SsmExtensionResponse = http_client
-        .get(format!(
-            "http://localhost:2773/systemsmanager/parameters/get?name={}&withDecryption=true",
-            urlencoding::encode(parameter_name)
-        ))
+        .get("http://localhost:2773/systemsmanager/parameters/get")
+        .query(&params)
         .header("X-Aws-Parameters-Secrets-Token", &session_token)
         .send()
         .await?
