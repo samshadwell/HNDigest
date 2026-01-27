@@ -50,6 +50,10 @@
                 outline: none;
             }
 
+            .cf-turnstyle {
+                margin-bottom: 16px;
+            }
+
             .message {
                 padding: 12px;
                 border-radius: 4px;
@@ -151,6 +155,7 @@
                 class="cf-turnstile"
                 data-sitekey="${turnstile_site_key}"
                 data-callback="onTurnstileSuccess"
+                data-appearance="interaction-only"
                 id="turnstile-widget"
             ></div>
 
