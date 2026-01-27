@@ -313,15 +313,23 @@ async fn fetch_ssm_parameter(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let session_token = env::var("AWS_SESSION_TOKEN")?;
     let params = [("name", parameter_name), ("withDecryption", "true")];
-    let response: SsmExtensionResponse = http_client
+    let response = http_client
         .get("http://localhost:2773/systemsmanager/parameters/get")
         .query(&params)
         .header("X-Aws-Parameters-Secrets-Token", &session_token)
         .send()
-        .await?
-        .error_for_status()?
-        .json()
         .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "<no body>".to_string());
+        return Err(format!("SSM fetch failed {}: {}", status, text).into());
+    }
+
+    let response: SsmExtensionResponse = response.json().await?;
     Ok(response.parameter.value)
 }
 
