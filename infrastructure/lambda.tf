@@ -71,7 +71,7 @@ resource "aws_lambda_function" "hndigest_api" {
     variables = {
       AWS_LAMBDA_LOG_FORMAT                  = "json"
       RUST_LOG                               = "info"
-      PARAMETERS_SECRETS_EXTENSION_LOG_LEVEL = "debug"
+      PARAMETERS_SECRETS_EXTENSION_LOG_LEVEL = "info"
       DYNAMODB_TABLE                         = each.value.table_name
       BASE_URL                               = "https://${each.value.domain}"
       EMAIL_FROM                             = each.value.from_email
