@@ -50,12 +50,19 @@ jobs:
           aws lambda update-function-code \
             --function-name ${{ env.STAGING_FUNCTION }}-api \
             --zip-file fileb://api-lambda.zip
+      - name: Deploy to Bounce Handler Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.STAGING_FUNCTION }}-bounce-handler \
+            --zip-file fileb://bounce-handler-lambda.zip
       - name: Wait for function update
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.STAGING_FUNCTION }}
           aws lambda wait function-updated \
             --function-name ${{ env.STAGING_FUNCTION }}-api
+          aws lambda wait function-updated \
+            --function-name ${{ env.STAGING_FUNCTION }}-bounce-handler
 
   invoke-staging:
     name: Invoke Staging
@@ -110,11 +117,19 @@ jobs:
           aws lambda update-function-code \
             --function-name ${{ env.PROD_FUNCTION }}-api \
             --zip-file fileb://api-lambda.zip
+      - name: Deploy to Bounce Handler Lambda
+        run: |
+          echo "Deploying to ${{ env.PROD_FUNCTION }}-bounce-handler..."
+          aws lambda update-function-code \
+            --function-name ${{ env.PROD_FUNCTION }}-bounce-handler \
+            --zip-file fileb://bounce-handler-lambda.zip
       - name: Wait for function update
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.PROD_FUNCTION }}
           aws lambda wait function-updated \
             --function-name ${{ env.PROD_FUNCTION }}-api
+          aws lambda wait function-updated \
+            --function-name ${{ env.PROD_FUNCTION }}-bounce-handler
 
           echo "Production Lambda updated successfully"

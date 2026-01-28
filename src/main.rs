@@ -60,6 +60,8 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let subject_prefix = env::var("SUBJECT_PREFIX").ok().filter(|s| !s.is_empty());
     let base_url = env::var("BASE_URL")
         .map_err(|_| Error::from("BASE_URL environment variable must be set"))?;
+    let ses_configuration_set = env::var("SES_CONFIGURATION_SET")
+        .map_err(|_| Error::from("SES_CONFIGURATION_SET environment variable must be set"))?;
 
     let date = Utc::now()
         .date_naive()
@@ -72,7 +74,12 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_sesv2::Client::new(&config);
     let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
-    let mailer = Arc::new(DigestMailer::new(ses_client, email_from, email_reply_to));
+    let mailer = Arc::new(DigestMailer::new(
+        ses_client,
+        email_from,
+        email_reply_to,
+        ses_configuration_set,
+    ));
     let snapshotter = PostSnapshotter::new(&storage_adapter);
 
     // Step 1: Snapshot all posts

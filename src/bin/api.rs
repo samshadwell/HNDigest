@@ -127,6 +127,7 @@ struct AppState {
     reply_to_address: String,
     base_url: String,
     turnstile_secret_key: String,
+    ses_configuration_set: String,
 }
 
 #[tokio::main]
@@ -148,6 +149,8 @@ async fn main() -> Result<(), Error> {
         .map_err(|_| Error::from("EMAIL_REPLY_TO environment variable must be set"))?;
     let base_url = env::var("BASE_URL")
         .map_err(|_| Error::from("BASE_URL environment variable must be set"))?;
+    let ses_configuration_set = env::var("SES_CONFIGURATION_SET")
+        .map_err(|_| Error::from("SES_CONFIGURATION_SET environment variable must be set"))?;
 
     // I'd love to pass this as an environment variable, but using AWS secrets manager is expensive
     // and this is effectively free
@@ -179,6 +182,7 @@ async fn main() -> Result<(), Error> {
         reply_to_address,
         base_url,
         turnstile_secret_key,
+        ses_configuration_set,
     });
 
     run(service_fn(|event| handler(event, state.clone()))).await
@@ -510,6 +514,7 @@ async fn send_verification_email(
         .reply_to_addresses(&state.reply_to_address)
         .destination(destination)
         .content(email_content)
+        .configuration_set_name(&state.ses_configuration_set)
         .send()
         .await
         .context(format!("Failed to send email to {}", email))?;
