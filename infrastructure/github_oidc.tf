@@ -80,7 +80,8 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Action = "lambda:*"
         Resource = concat(
           [for k, _ in local.environments : aws_lambda_function.hndigest[k].arn],
-          [for k, _ in local.environments : aws_lambda_function.hndigest_api[k].arn]
+          [for k, _ in local.environments : aws_lambda_function.hndigest_api[k].arn],
+          [for k, _ in local.environments : aws_lambda_function.bounce_handler[k].arn]
         )
       },
       {
@@ -140,6 +141,7 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Resource = concat(
           [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest[k].function_name}:*"],
           [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest_api[k].function_name}:*"],
+          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.bounce_handler[k].function_name}:*"],
           [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/apigateway/*"]
         )
       },
@@ -199,6 +201,12 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Effect   = "Allow"
         Action   = "ssm:*"
         Resource = [for k, _ in local.environments : aws_ssm_parameter.turnstile_secret_key[k].arn]
+      },
+      {
+        Sid      = "SNS"
+        Effect   = "Allow"
+        Action   = "sns:*"
+        Resource = [for k, _ in local.environments : aws_sns_topic.ses_notifications[k].arn]
       },
       {
         Sid      = "SSMDescribe"
