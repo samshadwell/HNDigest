@@ -18,10 +18,15 @@ path = "src/bin/api.rs"
 name = "add-subscriber"
 path = "src/bin/add_subscriber.rs"
 
+[[bin]]
+name = "hndigest-bounce-handler"
+path = "src/bin/bounce_handler.rs"
+
 [dependencies]
 anyhow = "1.0"
 email_address = "0.2"
 askama = "0.15"
+aws_lambda_events = { version = "1.0.3", default-features = false, features = ["sns"] }
 aws-config = { version = "1.8.12", features = ["rustls"] }
 aws-sdk-dynamodb = "1.103.0"
 aws-sdk-sesv2 = "1.111.0"

@@ -9,14 +9,21 @@ pub struct DigestMailer {
     ses_client: Client,
     from_address: String,
     reply_to_address: String,
+    configuration_set_name: String,
 }
 
 impl DigestMailer {
-    pub fn new(ses_client: Client, from_address: String, reply_to_address: String) -> Self {
+    pub fn new(
+        ses_client: Client,
+        from_address: String,
+        reply_to_address: String,
+        configuration_set_name: String,
+    ) -> Self {
         Self {
             ses_client,
             from_address,
             reply_to_address,
+            configuration_set_name,
         }
     }
 
@@ -72,6 +79,7 @@ impl DigestMailer {
             .reply_to_addresses(&self.reply_to_address)
             .destination(destination)
             .content(email_content)
+            .configuration_set_name(&self.configuration_set_name)
             .send()
             .await
             .context(format!("Failed to send email to {}", recipient))?;

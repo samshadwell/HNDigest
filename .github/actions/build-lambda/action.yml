@@ -38,6 +38,11 @@ runs:
         zip api-lambda.zip bootstrap
         rm bootstrap
 
+        # Bounce handler lambda
+        cp target/x86_64-unknown-linux-musl/release/hndigest-bounce-handler bootstrap
+        zip bounce-handler-lambda.zip bootstrap
+        rm bootstrap
+
     - name: Upload artifact
       uses: actions/upload-artifact@v6
       with:
@@ -45,4 +50,5 @@ runs:
         path: |
           lambda.zip
           api-lambda.zip
+          bounce-handler-lambda.zip
         retention-days: 1

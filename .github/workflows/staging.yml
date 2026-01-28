@@ -52,6 +52,12 @@ jobs:
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }}-api \
             --zip-file fileb://api-lambda.zip
 
+      - name: Deploy to Bounce Handler Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }}-bounce-handler \
+            --zip-file fileb://bounce-handler-lambda.zip
+
       - name: Wait for function update
         run: |
           aws lambda wait function-updated \
@@ -59,6 +65,9 @@ jobs:
 
           aws lambda wait function-updated \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }}-api
+
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }}-bounce-handler
 
   invoke:
     name: Invoke
