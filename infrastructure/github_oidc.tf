@@ -209,6 +209,12 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Resource = [for k, _ in local.environments : aws_sns_topic.ses_notifications[k].arn]
       },
       {
+        Sid      = "SQS"
+        Effect   = "Allow"
+        Action   = "sqs:*"
+        Resource = [for k, _ in local.environments : aws_sqs_queue.bounce_handler_dlq[k].arn]
+      },
+      {
         Sid      = "SSMDescribe"
         Effect   = "Allow"
         Action   = "ssm:DescribeParameters"
