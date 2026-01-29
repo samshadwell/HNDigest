@@ -203,10 +203,25 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Resource = [for k, _ in local.environments : aws_ssm_parameter.turnstile_secret_key[k].arn]
       },
       {
-        Sid      = "SNS"
-        Effect   = "Allow"
-        Action   = "sns:*"
-        Resource = [for k, _ in local.environments : aws_sns_topic.ses_notifications[k].arn]
+        Sid    = "SNS"
+        Effect = "Allow"
+        Action = "sns:*"
+        Resource = concat(
+          [for k, _ in local.environments : aws_sns_topic.ses_notifications[k].arn],
+          [for k, _ in local.alerted_environments : aws_sns_topic.alerts[k].arn]
+        )
+      },
+      {
+        Sid    = "CloudWatch"
+        Effect = "Allow"
+        Action = "cloudwatch:*"
+        Resource = concat(
+          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.dlq_not_empty[k].arn],
+          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.subscription_verified[k].arn],
+          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.digest_not_invoked[k].arn],
+          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.api_error_rate[k].arn],
+          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.digest_duration_high[k].arn]
+        )
       },
       {
         Sid      = "SQS"

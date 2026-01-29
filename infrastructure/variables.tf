@@ -68,6 +68,15 @@ variable "ses_staging_from_email" {
 }
 
 ###
+# Alerting config
+###
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications"
+  type        = string
+  default     = "hi@samshadwell.com"
+}
+
+###
 # Anti-bot config
 ###
 variable "turnstile_site_key" {

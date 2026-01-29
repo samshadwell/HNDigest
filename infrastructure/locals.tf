@@ -16,8 +16,9 @@ locals {
         from_email     = var.ses_from_email
         reply_to_email = var.ses_reply_to_email
         subject_prefix = ""
-        # Prod gets the EventBridge schedule
+        # Prod gets the EventBridge schedule and alerts
         has_schedule = true
+        has_alerts   = true
         domain       = var.landing_page_domain
       }
     },
@@ -30,8 +31,9 @@ locals {
         from_email     = coalesce(var.ses_staging_from_email, var.ses_from_email)
         reply_to_email = var.ses_reply_to_email
         subject_prefix = "[STAGING]"
-        # Staging is triggered manually, no schedule
+        # Staging is triggered manually, no schedule or alerts
         has_schedule = false
+        has_alerts   = false
         domain       = var.landing_page_staging_domain
       }
     } : {}
