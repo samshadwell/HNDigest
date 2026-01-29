@@ -36,4 +36,8 @@ resource "aws_sns_topic_subscription" "bounce_handler" {
   topic_arn = aws_sns_topic.ses_notifications[each.key].arn
   protocol  = "lambda"
   endpoint  = aws_lambda_function.bounce_handler[each.key].arn
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.bounce_handler_dlq[each.key].arn
+  })
 }
