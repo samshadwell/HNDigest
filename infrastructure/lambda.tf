@@ -103,6 +103,10 @@ resource "aws_lambda_function" "bounce_handler" {
   memory_size = var.lambda_memory_size
   timeout     = var.lambda_timeout
 
+  dead_letter_config {
+    target_arn = aws_sqs_queue.bounce_handler_dlq[each.key].arn
+  }
+
   environment {
     variables = {
       AWS_LAMBDA_LOG_FORMAT = "json"

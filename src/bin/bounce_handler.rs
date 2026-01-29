@@ -21,7 +21,7 @@ use tracing::{info, warn};
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SesNotification {
-    notification_type: String,
+    event_type: String,
     bounce: Option<BounceNotification>,
     complaint: Option<ComplaintNotification>,
 }
@@ -82,7 +82,7 @@ async fn handler(
     for record in &event.payload.records {
         let notification = &record.sns.message;
 
-        match notification.notification_type.as_str() {
+        match notification.event_type.as_str() {
             "Bounce" => {
                 let bounce = notification
                     .bounce
