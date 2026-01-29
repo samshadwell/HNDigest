@@ -56,6 +56,25 @@ resource "aws_iam_role_policy" "dynamodb_access" {
   })
 }
 
+# SQS DLQ access for bounce handler
+resource "aws_iam_role_policy" "sqs_dlq_access" {
+  for_each = local.environments
+
+  name = "${lower(var.project_name)}${each.value.name_suffix}-sqs-dlq-access"
+  role = aws_iam_role.lambda_exec[each.key].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "sqs:SendMessage"
+        Resource = aws_sqs_queue.bounce_handler_dlq[each.key].arn
+      }
+    ]
+  })
+}
+
 # SSM Parameter Store access (for secrets)
 resource "aws_iam_role_policy" "ssm_access" {
   for_each = local.environments
