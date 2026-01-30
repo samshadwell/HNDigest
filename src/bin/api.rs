@@ -446,6 +446,7 @@ async fn handle_verify_get(
 
     match subscribe::verify_subscription(&state.storage, &email, &token).await {
         Ok(Some(_subscriber)) => {
+            // Note: this log line is used for a custom metric
             info!(email = %email, "Subscription verified successfully");
             redirect("/verify-success.html")
         }
