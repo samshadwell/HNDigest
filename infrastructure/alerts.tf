@@ -89,7 +89,7 @@ resource "aws_cloudwatch_metric_alarm" "digest_not_invoked" {
   evaluation_periods  = 1
   metric_name         = "Invocations"
   namespace           = "AWS/Lambda"
-  period              = 86400
+  period              = 90000 # 25 hours (in case scheduling drifts)
   statistic           = "Sum"
   threshold           = 1
   treat_missing_data  = "breaching"
