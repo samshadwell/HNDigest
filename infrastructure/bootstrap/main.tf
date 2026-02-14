@@ -20,6 +20,24 @@ variable "bucket_name" {
   type        = string
 }
 
+variable "project_name" {
+  description = "Project name used for resource naming"
+  type        = string
+  default     = "HNDigest"
+}
+
+variable "github_repository" {
+  description = "GitHub repository in format owner/repo for OIDC trust"
+  type        = string
+  default     = "samshadwell/HNDigest"
+}
+
+variable "create_github_oidc_provider" {
+  description = "Whether to create the GitHub OIDC provider (set to false if it already exists in your account)"
+  type        = bool
+  default     = true
+}
+
 resource "aws_s3_bucket" "tfstate" {
   bucket = var.bucket_name
 }
@@ -50,4 +68,3 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
     }
   }
 }
-
