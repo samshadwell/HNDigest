@@ -2,17 +2,13 @@
 # Note: CloudFront routes /api/* requests to this API Gateway (see landing_page.tf)
 
 resource "aws_apigatewayv2_api" "hndigest" {
-  for_each = local.environments
-
-  name          = "${var.project_name}${each.value.name_suffix}-api"
+  name          = "${var.project_name}${var.name_suffix}-api"
   protocol_type = "HTTP"
 }
 
 # Default stage with auto-deploy
 resource "aws_apigatewayv2_stage" "default" {
-  for_each = local.environments
-
-  api_id      = aws_apigatewayv2_api.hndigest[each.key].id
+  api_id      = aws_apigatewayv2_api.hndigest.id
   name        = "$default"
   auto_deploy = true
 
@@ -22,7 +18,7 @@ resource "aws_apigatewayv2_stage" "default" {
   }
 
   access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.api_gateway[each.key].arn
+    destination_arn = aws_cloudwatch_log_group.api_gateway.arn
     format = jsonencode({
       requestId      = "$context.requestId"
       ip             = "$context.identity.sourceIp"
@@ -38,64 +34,50 @@ resource "aws_apigatewayv2_stage" "default" {
 
 # CloudWatch log group for API Gateway access logs
 resource "aws_cloudwatch_log_group" "api_gateway" {
-  for_each = local.environments
-
-  name              = "/aws/apigateway/${var.project_name}${each.value.name_suffix}-api"
+  name              = "/aws/apigateway/${var.project_name}${var.name_suffix}-api"
   retention_in_days = 14
 }
 
 # Lambda integration for API
 resource "aws_apigatewayv2_integration" "lambda" {
-  for_each = local.environments
-
-  api_id                 = aws_apigatewayv2_api.hndigest[each.key].id
+  api_id                 = aws_apigatewayv2_api.hndigest.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.hndigest_api[each.key].invoke_arn
+  integration_uri        = aws_lambda_function.hndigest_api.invoke_arn
   payload_format_version = "2.0"
 }
 
 # Route for subscribe endpoint
 resource "aws_apigatewayv2_route" "subscribe_post" {
-  for_each = local.environments
-
-  api_id    = aws_apigatewayv2_api.hndigest[each.key].id
+  api_id    = aws_apigatewayv2_api.hndigest.id
   route_key = "POST /api/subscribe"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda[each.key].id}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
 # Route for verify endpoint
 resource "aws_apigatewayv2_route" "verify_get" {
-  for_each = local.environments
-
-  api_id    = aws_apigatewayv2_api.hndigest[each.key].id
+  api_id    = aws_apigatewayv2_api.hndigest.id
   route_key = "GET /api/verify"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda[each.key].id}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
 # Routes for unsubscribe endpoints
 resource "aws_apigatewayv2_route" "unsubscribe_get" {
-  for_each = local.environments
-
-  api_id    = aws_apigatewayv2_api.hndigest[each.key].id
+  api_id    = aws_apigatewayv2_api.hndigest.id
   route_key = "GET /api/unsubscribe"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda[each.key].id}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
 resource "aws_apigatewayv2_route" "unsubscribe_post" {
-  for_each = local.environments
-
-  api_id    = aws_apigatewayv2_api.hndigest[each.key].id
+  api_id    = aws_apigatewayv2_api.hndigest.id
   route_key = "POST /api/unsubscribe"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda[each.key].id}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
 # Permission for API Gateway to invoke Lambda
 resource "aws_lambda_permission" "api_gateway" {
-  for_each = local.environments
-
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.hndigest_api[each.key].function_name
+  function_name = aws_lambda_function.hndigest_api.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.hndigest[each.key].execution_arn}/*/*"
+  source_arn    = "${aws_apigatewayv2_api.hndigest.execution_arn}/*/*"
 }

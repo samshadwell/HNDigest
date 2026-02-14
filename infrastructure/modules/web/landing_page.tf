@@ -1,19 +1,6 @@
 # Landing page infrastructure
 # Static site hosted via S3 + CloudFront
 
-# ACM certificate must be in us-east-1 for CloudFront
-provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
-
-  default_tags {
-    tags = {
-      Project   = var.project_name
-      ManagedBy = "OpenTofu"
-    }
-  }
-}
-
 # S3 bucket for static content
 resource "aws_s3_bucket" "landing_page" {
   bucket = var.landing_page_bucket_name
@@ -28,16 +15,11 @@ resource "aws_s3_bucket_public_access_block" "landing_page" {
   restrict_public_buckets = true
 }
 
-# ACM certificate for the landing page domain
+# ACM certificate for the landing page domain (must be in us-east-1 for CloudFront)
 resource "aws_acm_certificate" "landing_page" {
   provider          = aws.us_east_1
-  domain_name       = var.landing_page_domain
+  domain_name       = var.domain
   validation_method = "DNS"
-
-  # Also cover wildcard for subdomains (api, staging, etc.)
-  subject_alternative_names = [
-    "*.${var.landing_page_domain}"
-  ]
 
   lifecycle {
     create_before_destroy = true
@@ -45,46 +27,42 @@ resource "aws_acm_certificate" "landing_page" {
 }
 
 # ACM certificate validation
-# Terraform will wait here until DNS records are added and certificate validates
 resource "aws_acm_certificate_validation" "landing_page" {
   provider        = aws.us_east_1
   certificate_arn = aws_acm_certificate.landing_page.arn
 
   timeouts {
-    create = "45m" # Give time to add DNS records
+    create = "45m"
   }
 }
 
 # CloudFront Origin Access Control for S3
 resource "aws_cloudfront_origin_access_control" "landing_page" {
-  name                              = "hndigest-landing-page-oac"
-  description                       = "OAC for HNDigest landing page"
+  name                              = "${var.landing_page_bucket_name}-oac"
+  description                       = "OAC for ${var.project_name} landing page"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
 }
 
-# CloudFront distribution - one per environment
+# CloudFront distribution
 resource "aws_cloudfront_distribution" "landing_page" {
-  for_each = local.environments
-
   enabled             = true
   is_ipv6_enabled     = true
   default_root_object = "index.html"
-  aliases             = [each.value.domain]
+  aliases             = [var.domain]
   price_class         = "PriceClass_100" # US, Canada, Europe only (cheapest)
 
-  # S3 origin for static content (shared across environments)
+  # S3 origin for static content
   origin {
     domain_name              = aws_s3_bucket.landing_page.bucket_regional_domain_name
     origin_id                = "S3-landing-page"
     origin_access_control_id = aws_cloudfront_origin_access_control.landing_page.id
   }
 
-  # API Gateway origin for /api/* requests - routes to correct environment
+  # API Gateway origin for /api/* requests
   origin {
-    # Extract the domain from the API Gateway URL (remove https:// prefix)
-    domain_name = replace(aws_apigatewayv2_api.hndigest[each.key].api_endpoint, "https://", "")
+    domain_name = replace(aws_apigatewayv2_api.hndigest.api_endpoint, "https://", "")
     origin_id   = "APIGateway"
 
     custom_origin_config {
@@ -159,7 +137,7 @@ resource "aws_cloudfront_distribution" "landing_page" {
   depends_on = [aws_acm_certificate_validation.landing_page]
 }
 
-# S3 bucket policy allowing CloudFront access from all distributions
+# S3 bucket policy allowing CloudFront access
 resource "aws_s3_bucket_policy" "landing_page" {
   bucket = aws_s3_bucket.landing_page.id
 
@@ -176,7 +154,7 @@ resource "aws_s3_bucket_policy" "landing_page" {
         Resource = "${aws_s3_bucket.landing_page.arn}/*"
         Condition = {
           StringEquals = {
-            "AWS:SourceArn" = [for k, _ in local.environments : aws_cloudfront_distribution.landing_page[k].arn]
+            "AWS:SourceArn" = aws_cloudfront_distribution.landing_page.arn
           }
         }
       }
@@ -203,24 +181,24 @@ locals {
 
 # Upload static files (except index.html which is templated separately)
 resource "aws_s3_object" "static_files" {
-  for_each = { for f in fileset("${path.module}/../static", "**/*") : f => f if f != "index.html" }
+  for_each = { for f in fileset(var.static_files_path, "**/*") : f => f if f != "index.html" }
 
   bucket       = aws_s3_bucket.landing_page.id
   key          = each.value
-  source       = "${path.module}/../static/${each.value}"
+  source       = "${var.static_files_path}/${each.value}"
   content_type = lookup(local.content_types, regex("\\.[^.]+$", each.value), "application/octet-stream")
-  etag         = filemd5("${path.module}/../static/${each.value}")
+  etag         = filemd5("${var.static_files_path}/${each.value}")
 }
 
 # index.html is templated to inject the Turnstile site key
 resource "aws_s3_object" "index_html" {
   bucket = aws_s3_bucket.landing_page.id
   key    = "index.html"
-  content = templatefile("${path.module}/../static/index.html", {
+  content = templatefile("${var.static_files_path}/index.html", {
     turnstile_site_key = var.turnstile_site_key
   })
   content_type = "text/html"
-  etag = md5(templatefile("${path.module}/../static/index.html", {
+  etag = md5(templatefile("${var.static_files_path}/index.html", {
     turnstile_site_key = var.turnstile_site_key
   }))
 }
