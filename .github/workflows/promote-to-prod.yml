@@ -24,6 +24,13 @@ env:
   TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
 
 jobs:
+  echo-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo Inputs
+        run: |
+          echo "invoke_staging: ${{ github.event.inputs.invoke_staging }}"
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -106,7 +113,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     needs: [staging-infra-apply, build]
-    if: always() && needs.build.result == 'success' && (needs.staging-infra-apply.result == 'success' || needs.staging-infra-apply.result == 'skipped')
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
@@ -170,8 +177,6 @@ jobs:
   # --- Production Infrastructure ---
   prod-infra-plan:
     name: "Infra Plan (production)"
-    needs: [deploy-staging, invoke-staging]
-    if: always() && needs.deploy-staging.result == 'success' && (needs.invoke-staging.result == 'success' || needs.invoke-staging.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -216,7 +221,8 @@ jobs:
   # --- Production Approval + Deploy ---
   approve-prod:
     name: Approve Production
-    needs: prod-infra-plan
+    needs: [prod-infra-plan, deploy-staging, invoke-staging]
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -250,7 +256,7 @@ jobs:
   deploy-prod:
     name: Deploy to Production
     needs: [approve-prod, prod-infra-apply]
-    if: always() && needs.approve-prod.result == 'success' && (needs.prod-infra-apply.result == 'success' || needs.prod-infra-apply.result == 'skipped')
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials

@@ -101,7 +101,7 @@ jobs:
   deploy:
     name: Deploy Code
     needs: [infra-apply, build]
-    if: always() && needs.build.result == 'success' && (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
