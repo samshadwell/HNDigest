@@ -1,7 +1,5 @@
 resource "aws_dynamodb_table" "hndigest" {
-  for_each = local.environments
-
-  name         = each.value.table_name
+  name         = "${var.project_name}${var.name_suffix}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "PK"
   range_key    = "SK"
@@ -23,8 +21,11 @@ resource "aws_dynamodb_table" "hndigest" {
 
   # GSI for looking up subscribers by their unsubscribe token
   global_secondary_index {
-    name            = "unsubscribe_token_index"
-    hash_key        = "unsubscribe_token"
+    name = "unsubscribe_token_index"
+    key_schema {
+      attribute_name = "unsubscribe_token"
+      key_type       = "HASH"
+    }
     projection_type = "ALL"
   }
 

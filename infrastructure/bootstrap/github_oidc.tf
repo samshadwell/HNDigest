@@ -1,11 +1,13 @@
-# GitHub Actions OIDC provider
 data "aws_caller_identity" "current" {}
 
 resource "aws_iam_openid_connect_provider" "github" {
-  count           = var.create_github_oidc_provider ? 1 : 0
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["d89e3bd43d5d909b47a18977aa9d5ce36cee184c"]
+  count          = var.create_github_oidc_provider ? 1 : 0
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+  thumbprint_list = [
+    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
+    "6938fd4d98bab03faadb97b34396831e3780aea1",
+  ]
 }
 
 locals {
@@ -56,8 +58,8 @@ resource "aws_iam_role_policy" "github_actions_state" {
           "s3:ListBucket"
         ]
         Resource = [
-          "arn:aws:s3:::${var.state_bucket_name}",
-          "arn:aws:s3:::${var.state_bucket_name}/*"
+          "arn:aws:s3:::${var.bucket_name}",
+          "arn:aws:s3:::${var.bucket_name}/*"
         ]
       }
     ]
@@ -65,8 +67,8 @@ resource "aws_iam_role_policy" "github_actions_state" {
 }
 
 # Policy for managing infrastructure resources
-# Uses action wildcards with resource restrictions - limits what resources
-# can be affected rather than enumerating every possible action
+# Uses naming-convention patterns since this role can no longer reference
+# resources in other state files
 resource "aws_iam_role_policy" "github_actions_infra" {
   name = "${lower(var.project_name)}-github-actions-infra"
   role = aws_iam_role.github_actions.id
@@ -75,26 +77,22 @@ resource "aws_iam_role_policy" "github_actions_infra" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "Lambda"
-        Effect = "Allow"
-        Action = "lambda:*"
-        Resource = concat(
-          [for k, _ in local.environments : aws_lambda_function.hndigest[k].arn],
-          [for k, _ in local.environments : aws_lambda_function.hndigest_api[k].arn],
-          [for k, _ in local.environments : aws_lambda_function.bounce_handler[k].arn]
-        )
+        Sid      = "Lambda"
+        Effect   = "Allow"
+        Action   = "lambda:*"
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.project_name}*"
       },
       {
         Sid      = "DynamoDB"
         Effect   = "Allow"
         Action   = "dynamodb:*"
-        Resource = [for k, _ in local.environments : aws_dynamodb_table.hndigest[k].arn]
+        Resource = "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}*"
       },
       {
         Sid      = "EventBridge"
         Effect   = "Allow"
         Action   = "events:*"
-        Resource = [for k, _ in local.scheduled_environments : aws_cloudwatch_event_rule.daily_digest[k].arn]
+        Resource = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/${var.project_name}*"
       },
       {
         Sid      = "SES"
@@ -123,10 +121,7 @@ resource "aws_iam_role_policy" "github_actions_infra" {
           "iam:TagRole",
           "iam:UntagRole"
         ]
-        Resource = concat(
-          [for k, env in local.environments : aws_iam_role.lambda_exec[k].arn],
-          [aws_iam_role.github_actions.arn]
-        )
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${lower(var.project_name)}*"
       },
       {
         Sid      = "IAMOIDCProvider"
@@ -138,12 +133,10 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Sid    = "CloudWatchLogs"
         Effect = "Allow"
         Action = "logs:*"
-        Resource = concat(
-          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest[k].function_name}:*"],
-          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.hndigest_api[k].function_name}:*"],
-          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/lambda/${aws_lambda_function.bounce_handler[k].function_name}:*"],
-          [for k, env in local.environments : "arn:aws:logs:*:*:log-group:/aws/apigateway/*"]
-        )
+        Resource = [
+          "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}*",
+          "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/apigateway/${var.project_name}*"
+        ]
       },
       {
         Sid      = "CloudWatchLogsList"
@@ -168,72 +161,60 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Effect = "Allow"
         Action = "s3:*"
         Resource = [
-          aws_s3_bucket.landing_page.arn,
-          "${aws_s3_bucket.landing_page.arn}/*"
+          "arn:aws:s3:::hndigest-landing-page*",
+          "arn:aws:s3:::hndigest-landing-page*/*"
         ]
       },
       {
         Sid      = "LandingPageACM"
         Effect   = "Allow"
         Action   = "acm:*"
-        Resource = aws_acm_certificate.landing_page.arn
+        Resource = "arn:aws:acm:us-east-1:${data.aws_caller_identity.current.account_id}:certificate/*"
       },
       {
         Sid    = "LandingPageCloudFront"
         Effect = "Allow"
         Action = "cloudfront:*"
-        Resource = concat(
-          [for k, _ in local.environments : aws_cloudfront_distribution.landing_page[k].arn],
-          [aws_cloudfront_origin_access_control.landing_page.arn]
-        )
+        Resource = [
+          "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:distribution/*",
+          "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:origin-access-control/*"
+        ]
       },
       {
-        Sid    = "APIGateway"
-        Effect = "Allow"
-        Action = "apigateway:*"
-        Resource = concat(
-          [for k, _ in local.environments : aws_apigatewayv2_api.hndigest[k].arn],
-          [for k, _ in local.environments : "${aws_apigatewayv2_api.hndigest[k].arn}/*"]
-        )
+        Sid      = "APIGateway"
+        Effect   = "Allow"
+        Action   = "apigateway:*"
+        Resource = "arn:aws:apigateway:${var.aws_region}::*"
       },
       {
         Sid      = "SSM"
         Effect   = "Allow"
         Action   = "ssm:*"
-        Resource = [for k, _ in local.environments : aws_ssm_parameter.turnstile_secret_key[k].arn]
-      },
-      {
-        Sid    = "SNS"
-        Effect = "Allow"
-        Action = "sns:*"
-        Resource = concat(
-          [for k, _ in local.environments : aws_sns_topic.ses_notifications[k].arn],
-          [for k, _ in local.alerted_environments : aws_sns_topic.alerts[k].arn]
-        )
-      },
-      {
-        Sid    = "CloudWatch"
-        Effect = "Allow"
-        Action = "cloudwatch:*"
-        Resource = concat(
-          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.dlq_not_empty[k].arn],
-          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.subscription_verified[k].arn],
-          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.digest_not_invoked[k].arn],
-          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.api_error_rate[k].arn],
-          [for k, _ in local.alerted_environments : aws_cloudwatch_metric_alarm.digest_duration_high[k].arn]
-        )
-      },
-      {
-        Sid      = "SQS"
-        Effect   = "Allow"
-        Action   = "sqs:*"
-        Resource = [for k, _ in local.environments : aws_sqs_queue.bounce_handler_dlq[k].arn]
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/*"
       },
       {
         Sid      = "SSMDescribe"
         Effect   = "Allow"
         Action   = "ssm:DescribeParameters"
         Resource = "*"
+      },
+      {
+        Sid      = "SNS"
+        Effect   = "Allow"
+        Action   = "sns:*"
+        Resource = "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${lower(var.project_name)}*"
+      },
+      {
+        Sid      = "CloudWatch"
+        Effect   = "Allow"
+        Action   = "cloudwatch:*"
+        Resource = "arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${lower(var.project_name)}*"
+      },
+      {
+        Sid      = "SQS"
+        Effect   = "Allow"
+        Action   = "sqs:*"
+        Resource = "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${lower(var.project_name)}*"
       },
       {
         Sid    = "KMS"

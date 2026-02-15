@@ -12,11 +12,85 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-west-2
   LAMBDA_FUNCTION_NAME: HNDigest-staging
+  TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
+  TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
 
 jobs:
+  infra-plan:
+    name: "Infra Plan (staging)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/environments/staging
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_wrapper: false
+      - name: Initialize
+        run: tofu init
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          tofu plan -detailed-exitcode -out=tfplan > plan_output.txt 2>&1
+          EXIT_CODE=$?
+          set -e
+          cat plan_output.txt
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          elif [ $EXIT_CODE -eq 2 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "Plan failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+      - name: Upload plan artifact
+        if: steps.plan.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: tfplan-staging
+          path: infrastructure/environments/staging/tfplan
+          retention-days: 1
+
+  infra-apply:
+    name: "Infra Apply (staging)"
+    needs: infra-plan
+    if: needs.infra-plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/environments/staging
+    steps:
+      - uses: actions/checkout@v6
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: opentofu/setup-opentofu@v1
+      - name: Initialize
+        run: tofu init
+      - name: Download plan artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: tfplan-staging
+          path: infrastructure/environments/staging
+      - name: Apply
+        run: tofu apply -auto-approve tfplan
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -25,8 +99,9 @@ jobs:
       - uses: ./.github/actions/build-lambda
 
   deploy:
-    name: Deploy
-    needs: build
+    name: Deploy Code
+    needs: [infra-apply, build]
+    if: always() && needs.build.result == 'success' && (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
@@ -34,30 +109,25 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-
       - name: Download artifact
         uses: actions/download-artifact@v7
         with:
           name: lambda-zips
-
       - name: Deploy to Digest Lambda
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
             --zip-file fileb://lambda.zip
-
       - name: Deploy to API Lambda
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }}-api \
             --zip-file fileb://api-lambda.zip
-
       - name: Deploy to Bounce Handler Lambda
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }}-bounce-handler \
             --zip-file fileb://bounce-handler-lambda.zip
-
       - name: Wait for function update
         run: |
           aws lambda wait function-updated \

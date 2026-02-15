@@ -1,15 +1,13 @@
+data "aws_caller_identity" "current" {}
+
 # SNS topic for SES bounce/complaint notifications
 resource "aws_sns_topic" "ses_notifications" {
-  for_each = local.environments
-
-  name = "${lower(var.project_name)}${each.value.name_suffix}-ses-notifications"
+  name = "${lower(var.project_name)}${var.name_suffix}-ses-notifications"
 }
 
 # Allow SES to publish to the SNS topic
 resource "aws_sns_topic_policy" "ses_notifications" {
-  for_each = local.environments
-
-  arn = aws_sns_topic.ses_notifications[each.key].arn
+  arn = aws_sns_topic.ses_notifications.arn
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -18,7 +16,7 @@ resource "aws_sns_topic_policy" "ses_notifications" {
         Effect    = "Allow"
         Principal = { Service = "ses.amazonaws.com" }
         Action    = "sns:Publish"
-        Resource  = aws_sns_topic.ses_notifications[each.key].arn
+        Resource  = aws_sns_topic.ses_notifications.arn
         Condition = {
           StringEquals = {
             "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
@@ -31,13 +29,11 @@ resource "aws_sns_topic_policy" "ses_notifications" {
 
 # Subscribe the bounce handler Lambda to the SNS topic
 resource "aws_sns_topic_subscription" "bounce_handler" {
-  for_each = local.environments
-
-  topic_arn = aws_sns_topic.ses_notifications[each.key].arn
+  topic_arn = aws_sns_topic.ses_notifications.arn
   protocol  = "lambda"
-  endpoint  = aws_lambda_function.bounce_handler[each.key].arn
+  endpoint  = aws_lambda_function.bounce_handler.arn
 
   redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.bounce_handler_dlq[each.key].arn
+    deadLetterTargetArn = aws_sqs_queue.bounce_handler_dlq.arn
   })
 }

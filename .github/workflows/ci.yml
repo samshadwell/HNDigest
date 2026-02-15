@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -36,16 +38,147 @@ jobs:
   opentofu:
     name: "OpenTofu Lint/Validation"
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: infrastructure
+    strategy:
+      matrix:
+        environment: [staging, production]
     steps:
       - uses: actions/checkout@v6
       - name: Install OpenTofu
         uses: opentofu/setup-opentofu@v1
       - name: Check formatting
         run: tofu fmt -check -recursive
+        working-directory: infrastructure
       - name: Initialize (no backend)
         run: tofu init -backend=false
+        working-directory: infrastructure/environments/${{ matrix.environment }}
       - name: Validate
         run: tofu validate
+        working-directory: infrastructure/environments/${{ matrix.environment }}
+
+  tofu-plan-staging:
+    name: "OpenTofu Plan (staging)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
+      TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_wrapper: false
+      - name: Initialize
+        run: tofu init
+        working-directory: infrastructure/environments/staging
+      - name: Plan
+        id: plan
+        working-directory: infrastructure/environments/staging
+        run: |
+          set +e
+          tofu plan -detailed-exitcode 2>&1
+          EXIT_CODE=$?
+          set -e
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          elif [ $EXIT_CODE -eq 2 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            exit 1
+          fi
+
+  tofu-plan-production:
+    name: "OpenTofu Plan (production)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
+      TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_wrapper: false
+      - name: Initialize
+        run: tofu init
+        working-directory: infrastructure/environments/production
+      - name: Plan
+        id: plan
+        working-directory: infrastructure/environments/production
+        run: |
+          set +e
+          tofu plan -detailed-exitcode 2>&1
+          EXIT_CODE=$?
+          set -e
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          elif [ $EXIT_CODE -eq 2 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            exit 1
+          fi
+
+  tofu-plan-comment:
+    name: "OpenTofu Plan Comment"
+    if: github.event_name == 'pull_request' && always()
+    needs: [tofu-plan-staging, tofu-plan-production]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const results = {
+              staging: '${{ needs.tofu-plan-staging.outputs.has_changes }}',
+              production: '${{ needs.tofu-plan-production.outputs.has_changes }}',
+            };
+
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const lines = ['### OpenTofu Plan', '', '| Environment | Status |', '|---|---|'];
+
+            for (const [env, hasChanges] of Object.entries(results)) {
+              if (hasChanges === 'true') {
+                lines.push(`| ${env} | :warning: Has changes — [view logs](${runUrl}) |`);
+              } else if (hasChanges === 'false') {
+                lines.push(`| ${env} | :white_check_mark: No changes |`);
+              } else {
+                lines.push(`| ${env} | :x: Plan failed — [view logs](${runUrl}) |`);
+              }
+            }
+
+            const body = lines.join('\n');
+            const marker = '### OpenTofu Plan';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
