@@ -152,7 +152,7 @@ jobs:
   invoke-staging:
     name: Invoke Staging
     needs: deploy-staging
-    if: ${{ inputs.invoke_staging }}
+    if: ${{ !cancelled() && !failure() && inputs.invoke_staging }}
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
