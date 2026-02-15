@@ -57,7 +57,6 @@ jobs:
 
   tofu-plan-staging:
     name: "OpenTofu Plan (staging)"
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
       TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
@@ -94,7 +93,6 @@ jobs:
 
   tofu-plan-production:
     name: "OpenTofu Plan (production)"
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
       TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
