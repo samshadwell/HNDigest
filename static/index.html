@@ -7,7 +7,7 @@
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap"
             rel="stylesheet"
         />
         <link href="/style.css" rel="stylesheet" />
@@ -106,7 +106,9 @@
             <p>
                 The top posts on
                 <a href="https://news.ycombinator.com">Hacker News</a>,
-                delivered to your inbox every day.
+                delivered to your inbox every day. Fully open-source
+                <a href="https://github.com/samshadwell/HNDigest">on GitHub</a>.
+                No ads, no sponsors, just links.
             </p>
         </div>
 
@@ -162,6 +164,72 @@
                 id="turnstile-widget"
             ></div>
         </form>
+
+        <details>
+            <summary>FAQ</summary>
+            <h3>What do these newsletters look like?</h3>
+            <p>
+                <a href="/example.html">Here’s an example</a> of the 250+ points
+                newsletter for February 19, 2026.
+            </p>
+
+            <h3>Which digest type should I choose?</h3>
+            <p>
+                The one I personally use is <q>All stories with 250+ points</q>,
+                which is why it’s the default! If you don’t like it, you can
+                sign up again with a different option and it will override your
+                existing subscription.
+            </p>
+
+            <h3>Why this digest instead of {some other option}?</h3>
+            <p>
+                No strong reason! I built this as a personal project for myself
+                initially, mostly as a learning experience. Now that
+                <q>learning experience</q> has been expanded to include opening
+                it up for everyone to use. I don’t have any personal experience
+                with other options, but some things I like about this one:
+            </p>
+            <ul>
+                <li>
+                    All of the code, including deployment configuration, is
+                    open-source and available
+                    <a href="https://github.com/samshadwell/HNDigest"
+                        >on GitHub</a
+                    >
+                    so I understand exactly how the digest is generated
+                </li>
+                <li>No ads, no sponsors, no tracking links</li>
+                <li>I get to control how many/few posts I get per day</li>
+                <li>I built it myself!</li>
+            </ul>
+
+            <h3>Why does this end up in my spam folder?</h3>
+            <p>
+                Spam filters can be varied and mysterious. One reason I’ve seen:
+                because these emails serve links to other websites, if a linked
+                website has a poor reputation then this email might inherit that
+                reputation. The best way to prevent these emails from being
+                routed to spam is to add the sender
+                <span class="monospace">mail@hndigest.samshadwell.com</span> to
+                your contacts list.
+            </p>
+
+            <h3>How is this monetized?</h3>
+            <p>
+                It is not! I’m not seeking to monetize this service. So far I
+                have covered all the costs, a grand total of $0.
+            </p>
+
+            <h3>How can I provide feedback?</h3>
+            <p>
+                The best place is on the
+                <a href="https://github.com/samshadwell/HNDigest/issues"
+                    >issues page</a
+                >
+                for the project's GitHub repository. Otherwise, you can email me
+                at <a href="mailto:hi@samshadwell.com">hi@samshadwell.com</a>.
+            </p>
+        </details>
 
         <script>
             const form = document.getElementById("subscribe-form");

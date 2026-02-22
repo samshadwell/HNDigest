@@ -7,19 +7,11 @@
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap"
             rel="stylesheet"
         />
         <link href="/style.css" rel="stylesheet" />
         <style>
-            .email {
-                font-family: monospace;
-                font-size: 0.9em;
-                background-color: rgba(0, 0, 0, 0.06);
-                padding: 2px 6px;
-                border-radius: 4px;
-            }
-
             .actions {
                 display: flex;
                 flex-wrap: wrap;
@@ -43,10 +35,6 @@
                 .cancel {
                     color: rgb(255, 254, 242);
                 }
-
-                .email {
-                    background-color: rgba(255, 255, 255, 0.1);
-                }
             }
         </style>
     </head>
@@ -55,7 +43,7 @@
         <h1>Unsubscribe from Hacker Digest</h1>
         <p>
             Are you sure you want to unsubscribe
-            <span class="email">{{ email }}</span>?
+            <span class="monospace">{{ email }}</span>?
         </p>
         <div class="actions">
             <form method="POST" action="/api/unsubscribe?token={{ token }}">

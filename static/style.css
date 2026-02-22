@@ -15,8 +15,35 @@ body {
     padding: 80px 20px 20px;
 }
 
-p {
-    font-size: 20px;
+h1 {
+    font-size: 32px;
+    font-weight: 600;
+    margin-bottom: 0;
+}
+
+h2,
+details {
+    font-size: 24px;
+    font-weight: 600;
+    margin-top: 20px;
+    margin-bottom: 0;
+}
+
+h3 {
+    font-size: 18px;
+    font-weight: 400;
+    font-style: italic;
+    margin-top: 20px;
+    margin-bottom: 0;
+}
+
+p,
+details p,
+ul {
+    font-size: 18px;
+    font-weight: 400;
+    margin-top: 10px;
+    margin-bottom: 0;
 }
 
 a {
@@ -44,16 +71,22 @@ button:disabled {
 }
 
 .footer {
-    font-size: 16px;
+    font-size: 14px;
+    margin-top: 32px;
     color: rgb(100, 100, 100);
 }
 
 .hero h1 {
-    font-size: 50px;
+    font-size: 48px;
     color: #ff6600;
 }
-.hero p {
-    font-size: 25px;
+
+.monospace {
+    font-family: monospace;
+    font-size: 0.9em;
+    background-color: rgba(0, 0, 0, 0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -65,5 +98,9 @@ button:disabled {
 
     .footer {
         color: rgb(180, 180, 180);
+    }
+
+    .monospace {
+        background-color: rgba(255, 255, 255, 0.1);
     }
 }
