@@ -231,7 +231,7 @@ jobs:
   prod-infra-apply:
     name: "Infra Apply (production)"
     needs: [approve-prod, prod-infra-plan]
-    if: needs.prod-infra-plan.outputs.has_changes == 'true'
+    if: ${{ !cancelled() && !failure() && needs.prod-infra-plan.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
