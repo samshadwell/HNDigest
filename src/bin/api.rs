@@ -12,7 +12,7 @@ use aws_sdk_ssm::Client as SsmClient;
 use email_address::EmailAddress;
 use hndigest::storage_adapter::StorageAdapter;
 use hndigest::strategies::DigestStrategy;
-use hndigest::subscribe::{self, SubscribeResult};
+use hndigest::subscribe;
 use hndigest::types::Token;
 use hndigest::unsubscribe;
 use lambda_http::{Body, Error, Request, RequestExt, Response, run, service_fn};
@@ -388,15 +388,7 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
     // Create pending subscription
     let pending =
         match subscribe::create_pending_subscription(&state.storage, &email, strategy).await {
-            Ok(SubscribeResult::PendingCreated(p)) => p,
-            Ok(SubscribeResult::AlreadySubscribed) => {
-                info!(email = %request.email, "Email already subscribed");
-                // Return generic message to avoid email enumeration
-                return json_response(
-                    200,
-                    r#"{"message": "Check your email to confirm your subscription"}"#,
-                );
-            }
+            Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "Failed to create pending subscription");
                 return json_response(500, r#"{"error": "Internal server error"}"#);

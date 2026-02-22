@@ -9,33 +9,19 @@ use anyhow::Result;
 use email_address::EmailAddress;
 use std::sync::Arc;
 
-/// Result of attempting to create a subscription.
-#[derive(Debug)]
-pub enum SubscribeResult {
-    /// Verification email should be sent.
-    PendingCreated(PendingSubscription),
-    /// Email is already subscribed and verified.
-    AlreadySubscribed,
-}
-
 /// Create a pending subscription for an email address.
 ///
-/// Returns `SubscribeResult::PendingCreated` with the pending subscription
-/// if the email is not already subscribed, or `SubscribeResult::AlreadySubscribed`
-/// if the email is already verified.
+/// If the email is already subscribed, will still create
+/// pending record and return it.
 pub async fn create_pending_subscription(
     storage: &Arc<StorageAdapter>,
     email: &EmailAddress,
     strategy: DigestStrategy,
-) -> Result<SubscribeResult> {
-    if storage.subscriber_exists(email).await? {
-        return Ok(SubscribeResult::AlreadySubscribed);
-    }
-
+) -> Result<PendingSubscription> {
     let pending = PendingSubscription::new(email.clone(), strategy);
     storage.upsert_pending_subscription(&pending).await?;
 
-    Ok(SubscribeResult::PendingCreated(pending))
+    Ok(pending)
 }
 
 /// Verify a pending subscription by email and token.
