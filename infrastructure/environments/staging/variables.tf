@@ -38,6 +38,12 @@ variable "turnstile_site_key" {
   default     = "0x4AAAAAACTuSJcLuENs4joL"
 }
 
+variable "cloudfront_web_acl_arn" {
+  description = "ARN of the WAF Web ACL created by AWS when enabling CloudFront flat-rate pricing"
+  type        = string
+  default     = "arn:aws:wafv2:us-east-1:087108798373:global/webacl/CreatedByCloudFront-0cf3e787/f5bd2664-3404-4168-ab68-9f9096a7a065"
+}
+
 variable "lambda_memory_size" {
   description = "Memory size for Lambda functions in MB"
   type        = number

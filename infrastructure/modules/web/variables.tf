@@ -30,6 +30,12 @@ variable "turnstile_site_key" {
   type        = string
 }
 
+variable "cloudfront_web_acl_arn" {
+  description = "ARN of the WAF Web ACL for CloudFront, created by AWS when enabling flat-rate pricing. Leave null if not using flat-rate pricing."
+  type        = string
+  default     = null
+}
+
 variable "static_files_path" {
   description = "Path to the static files directory"
   type        = string

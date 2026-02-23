@@ -57,12 +57,15 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_except_host_header" {
 }
 
 # CloudFront distribution
+# NOTE: This uses flat-rate billing with a free tier. This cannot be configured
+# in OpenTofu yet, see https://github.com/hashicorp/terraform-provider-aws/issues/45450
 resource "aws_cloudfront_distribution" "landing_page" {
   enabled             = true
   is_ipv6_enabled     = true
   default_root_object = "index.html"
   aliases             = [var.domain]
-  price_class         = "PriceClass_100" # US, Canada, Europe only (cheapest)
+  price_class         = "PriceClass_All"
+  web_acl_id          = var.cloudfront_web_acl_arn
 
   # S3 origin for static content
   origin {
