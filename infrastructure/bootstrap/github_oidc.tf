@@ -177,7 +177,9 @@ resource "aws_iam_role_policy" "github_actions_infra" {
         Action = "cloudfront:*"
         Resource = [
           "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:distribution/*",
-          "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:origin-access-control/*"
+          "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:origin-access-control/*",
+          "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:cache-policy/*",
+          "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:origin-request-policy/*"
         ]
       },
       {

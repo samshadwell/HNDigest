@@ -50,6 +50,12 @@ variable "run_hour_utc" {
   default     = 5
 }
 
+variable "cloudfront_web_acl_arn" {
+  description = "ARN of the WAF Web ACL created by AWS when enabling CloudFront flat-rate pricing"
+  type        = string
+  default     = "arn:aws:wafv2:us-east-1:087108798373:global/webacl/CreatedByCloudFront-114a103d/52137a35-f978-4dde-b7eb-2a1eaa1c0fd5"
+}
+
 variable "lambda_memory_size" {
   description = "Memory size for Lambda functions in MB"
   type        = number
