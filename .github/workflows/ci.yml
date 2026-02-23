@@ -58,9 +58,6 @@ jobs:
   tofu-plan-staging:
     name: "OpenTofu Plan (staging)"
     runs-on: ubuntu-latest
-    env:
-      TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
-      TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
     outputs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
     steps:
@@ -94,9 +91,6 @@ jobs:
   tofu-plan-production:
     name: "OpenTofu Plan (production)"
     runs-on: ubuntu-latest
-    env:
-      TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
-      TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
     outputs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
     steps:

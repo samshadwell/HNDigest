@@ -13,11 +13,13 @@ variable "aws_region" {
 variable "ses_from_email" {
   description = "Email address to send digests from"
   type        = string
+  default     = "mail@hndigest.samshadwell.com"
 }
 
 variable "ses_reply_to_email" {
   description = "Reply-to email address"
   type        = string
+  default     = "hi@samshadwell.com"
 }
 
 variable "domain" {
