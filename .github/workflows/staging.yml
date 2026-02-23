@@ -19,8 +19,6 @@ concurrency:
 env:
   AWS_REGION: us-west-2
   LAMBDA_FUNCTION_NAME: HNDigest-staging
-  TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
-  TF_VAR_ses_reply_to_email: ${{ vars.SES_REPLY_TO_EMAIL }}
 
 jobs:
   echo-inputs:
