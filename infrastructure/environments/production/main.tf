@@ -48,6 +48,7 @@ module "web" {
 
   environment              = "prod"
   name_suffix              = ""
+  cloudfront_web_acl_arn   = var.cloudfront_web_acl_arn
   domain                   = var.domain
   landing_page_bucket_name = var.landing_page_bucket_name
   turnstile_site_key       = var.turnstile_site_key
