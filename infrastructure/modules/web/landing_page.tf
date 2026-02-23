@@ -45,6 +45,17 @@ resource "aws_cloudfront_origin_access_control" "landing_page" {
   signing_protocol                  = "sigv4"
 }
 
+# CloudFront managed cache/origin request policies
+data "aws_cloudfront_cache_policy" "caching_optimized" {
+  name = "Managed-CachingOptimized"
+}
+data "aws_cloudfront_cache_policy" "caching_disabled" {
+  name = "Managed-CachingDisabled"
+}
+data "aws_cloudfront_origin_request_policy" "all_viewer_except_host_header" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
+
 # CloudFront distribution
 resource "aws_cloudfront_distribution" "landing_page" {
   enabled             = true
@@ -80,40 +91,19 @@ resource "aws_cloudfront_distribution" "landing_page" {
     target_origin_id       = "S3-landing-page"
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-
-    min_ttl     = 0
-    default_ttl = 3600  # 1 hour
-    max_ttl     = 86400 # 24 hours
+    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
   }
 
   # API behavior: forward /api/* to API Gateway
   ordered_cache_behavior {
-    path_pattern           = "/api/*"
-    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "APIGateway"
-    viewer_protocol_policy = "redirect-to-https"
-    compress               = true
-
-    # Don't cache API responses
-    min_ttl     = 0
-    default_ttl = 0
-    max_ttl     = 0
-
-    forwarded_values {
-      query_string = true # Forward query strings (e.g., ?token=...)
-      headers      = ["Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"]
-      cookies {
-        forward = "none"
-      }
-    }
+    path_pattern             = "/api/*"
+    allowed_methods          = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods           = ["GET", "HEAD"]
+    target_origin_id         = "APIGateway"
+    viewer_protocol_policy   = "redirect-to-https"
+    compress                 = true
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id
   }
 
   restrictions {
