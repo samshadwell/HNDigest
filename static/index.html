@@ -4,10 +4,15 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Hacker Digest - Daily Hacker News email digest</title>
+        <meta
+            name="description"
+            content="The top posts on Hacker News, delivered to your email inbox every day."
+        />
+        <link rel="icon" href="data:," />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;1,400&display=swap"
             rel="stylesheet"
         />
         <link href="/style.css" rel="stylesheet" />
@@ -30,7 +35,7 @@
             .form-group label {
                 display: block;
                 margin-bottom: 8px;
-                font-weight: 600;
+                font-weight: 700;
             }
 
             .form-group input[type="email"],
@@ -39,14 +44,16 @@
                 padding: 12px;
                 font-size: 16px;
                 font-family: inherit;
-                border: 2px solid #ccc;
+                border: 2px solid var(--dim);
                 border-radius: 4px;
                 box-sizing: border-box;
+                background-color: var(--bg-alt);
+                color: var(--fg);
             }
 
             .form-group input[type="email"]:focus,
             .form-group select:focus {
-                border-color: #ff6600;
+                border-color: var(--primary);
                 outline: none;
             }
 
@@ -57,15 +64,20 @@
             }
 
             .message.success {
-                background-color: #d4edda;
-                color: #155724;
-                border: 1px solid #c3e6cb;
+                background-color: color-mix(
+                    in srgb,
+                    var(--green) 15%,
+                    var(--bg)
+                );
+                color: var(--fg);
+                border: 1px solid
+                    color-mix(in srgb, var(--green) 30%, var(--bg));
             }
 
             .message.error {
-                background-color: #f8d7da;
-                color: #721c24;
-                border: 1px solid #f5c6cb;
+                background-color: color-mix(in srgb, var(--red) 15%, var(--bg));
+                color: var(--fg);
+                border: 1px solid color-mix(in srgb, var(--red) 30%, var(--bg));
             }
 
             .website-field {
@@ -76,161 +88,151 @@
             .cf-turnstile {
                 margin-top: 20px;
             }
-
-            @media (prefers-color-scheme: dark) {
-                .form-group input[type="email"],
-                .form-group select {
-                    background-color: #333;
-                    color: #fff;
-                    border-color: #555;
-                }
-
-                .message.success {
-                    background-color: #1a3d1a;
-                    color: #9fdf9f;
-                    border-color: #2a5a2a;
-                }
-
-                .message.error {
-                    background-color: #3d1a1a;
-                    color: #df9f9f;
-                    border-color: #5a2a2a;
-                }
-            }
         </style>
     </head>
 
     <body>
-        <div class="hero">
-            <h1>Hacker Digest</h1>
-            <p>
-                The top posts on
-                <a href="https://news.ycombinator.com">Hacker News</a>,
-                delivered to your inbox every day. Fully open-source
-                <a href="https://github.com/samshadwell/HNDigest">on GitHub</a>.
-                No ads, no sponsors, just links.
-            </p>
-        </div>
-
-        <form class="subscribe-form" id="subscribe-form">
-            <div class="form-group">
-                <label for="email">Email address</label>
-                <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    required
-                    placeholder="you@example.com"
-                />
-            </div>
-
-            <div class="form-group">
-                <label for="strategy">Digest type</label>
-                <select id="strategy" name="strategy" required>
-                    <option value="TOP_N#10">Top 10 stories by points</option>
-                    <option value="TOP_N#20">Top 20 stories by points</option>
-                    <option value="TOP_N#50">Top 50 stories by points</option>
-                    <option value="POINT_THRESHOLD#500">
-                        All stories with 500+ points
-                    </option>
-                    <option selected value="POINT_THRESHOLD#250">
-                        All stories with 250+ points
-                    </option>
-                    <option value="POINT_THRESHOLD#100">
-                        All stories with 100+ points
-                    </option>
-                </select>
-            </div>
-
-            <div class="website-field" aria-hidden="true">
-                <label for="website">Website</label>
-                <input
-                    type="text"
-                    id="website"
-                    name="website"
-                    tabindex="-1"
-                    autocomplete="off"
-                />
-            </div>
-
-            <button type="submit" id="submit-btn">Subscribe</button>
-
-            <div id="message" class="message" style="display: none"></div>
-
-            <div
-                class="cf-turnstile"
-                data-sitekey="${turnstile_site_key}"
-                data-appearance="interaction-only"
-                id="turnstile-widget"
-            ></div>
-        </form>
-
-        <details>
-            <summary>FAQ</summary>
-            <h3>What do these newsletters look like?</h3>
-            <p>
-                <a href="/example.html">Here’s an example</a> of the 250+ points
-                newsletter for February 19, 2026.
-            </p>
-
-            <h3>Which digest type should I choose?</h3>
-            <p>
-                The one I personally use is <q>All stories with 250+ points</q>,
-                which is why it’s the default! If you don’t like it, you can
-                sign up again with a different option and it will override your
-                existing subscription.
-            </p>
-
-            <h3>Why this digest instead of {some other option}?</h3>
-            <p>
-                No strong reason! I built this as a personal project for myself
-                initially, mostly as a learning experience. Now that
-                <q>learning experience</q> has been expanded to include opening
-                it up for everyone to use. I don’t have any personal experience
-                with other options, but some things I like about this one:
-            </p>
-            <ul>
-                <li>
-                    All of the code, including deployment configuration, is
-                    open-source and available
+        <main>
+            <div class="hero">
+                <h1>Hacker Digest</h1>
+                <p>
+                    The top posts on
+                    <a href="https://news.ycombinator.com">Hacker News</a>,
+                    delivered to your email inbox every day. Fully open-source
                     <a href="https://github.com/samshadwell/HNDigest"
                         >on GitHub</a
+                    >. No ads, no sponsors, just links.
+                </p>
+            </div>
+
+            <form class="subscribe-form" id="subscribe-form">
+                <div class="form-group">
+                    <label for="email">Email address</label>
+                    <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        required
+                        placeholder="you@example.com"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label for="strategy">Digest type</label>
+                    <select id="strategy" name="strategy" required>
+                        <option value="TOP_N#10">
+                            Top 10 stories by points
+                        </option>
+                        <option value="TOP_N#20">
+                            Top 20 stories by points
+                        </option>
+                        <option value="TOP_N#50">
+                            Top 50 stories by points
+                        </option>
+                        <option value="POINT_THRESHOLD#500">
+                            All stories with 500+ points
+                        </option>
+                        <option selected value="POINT_THRESHOLD#250">
+                            All stories with 250+ points
+                        </option>
+                        <option value="POINT_THRESHOLD#100">
+                            All stories with 100+ points
+                        </option>
+                    </select>
+                </div>
+
+                <div class="website-field" aria-hidden="true">
+                    <label for="website">Website</label>
+                    <input
+                        type="text"
+                        id="website"
+                        name="website"
+                        tabindex="-1"
+                        autocomplete="off"
+                    />
+                </div>
+
+                <button type="submit" id="submit-btn">Subscribe</button>
+
+                <div id="message" class="message" style="display: none"></div>
+
+                <div
+                    class="cf-turnstile"
+                    data-sitekey="${turnstile_site_key}"
+                    data-appearance="interaction-only"
+                    id="turnstile-widget"
+                ></div>
+            </form>
+
+            <details>
+                <summary><h2>FAQ</h2></summary>
+                <h3>What do these newsletters look like?</h3>
+                <p>
+                    <a href="/example.html">Here’s an example</a> of the 250+
+                    points newsletter for February 19, 2026.
+                </p>
+
+                <h3>Which digest type should I choose?</h3>
+                <p>
+                    The one I personally use is
+                    <q>All stories with 250+ points</q>, which is why it’s the
+                    default! If you don’t like it, you can sign up again with a
+                    different option and it will override your existing
+                    subscription.
+                </p>
+
+                <h3>Why this digest instead of {some other option}?</h3>
+                <p>
+                    No strong reason! I built this as a personal project for
+                    myself initially, mostly as a learning experience. Now that
+                    <q>learning experience</q> has been expanded to include
+                    opening it up for everyone to use. I don’t have any personal
+                    experience with other options, but some things I like about
+                    this one:
+                </p>
+                <ul>
+                    <li>
+                        All of the code, including deployment configuration, is
+                        open-source and available
+                        <a href="https://github.com/samshadwell/HNDigest"
+                            >on GitHub</a
+                        >
+                        so I understand exactly how the digest is generated
+                    </li>
+                    <li>No ads, no sponsors, no tracking links</li>
+                    <li>I get to control how many/few posts I get per day</li>
+                    <li>I built it myself!</li>
+                </ul>
+
+                <h3>Why does this end up in my spam folder?</h3>
+                <p>
+                    Spam filters can be varied and mysterious. One reason I’ve
+                    seen: because these emails serve links to other websites, if
+                    a linked website has a poor reputation then this email might
+                    inherit that reputation. The best way to prevent these
+                    emails from being routed to spam is to add the sender
+                    <span class="monospace">mail@hndigest.samshadwell.com</span>
+                    to your contacts list.
+                </p>
+
+                <h3>How is this monetized?</h3>
+                <p>
+                    It is not! I’m not seeking to monetize this service. So far
+                    I have covered all the costs, a grand total of $0.
+                </p>
+
+                <h3>How can I provide feedback?</h3>
+                <p>
+                    The best place is on the
+                    <a href="https://github.com/samshadwell/HNDigest/issues"
+                        >issues page</a
                     >
-                    so I understand exactly how the digest is generated
-                </li>
-                <li>No ads, no sponsors, no tracking links</li>
-                <li>I get to control how many/few posts I get per day</li>
-                <li>I built it myself!</li>
-            </ul>
-
-            <h3>Why does this end up in my spam folder?</h3>
-            <p>
-                Spam filters can be varied and mysterious. One reason I’ve seen:
-                because these emails serve links to other websites, if a linked
-                website has a poor reputation then this email might inherit that
-                reputation. The best way to prevent these emails from being
-                routed to spam is to add the sender
-                <span class="monospace">mail@hndigest.samshadwell.com</span> to
-                your contacts list.
-            </p>
-
-            <h3>How is this monetized?</h3>
-            <p>
-                It is not! I’m not seeking to monetize this service. So far I
-                have covered all the costs, a grand total of $0.
-            </p>
-
-            <h3>How can I provide feedback?</h3>
-            <p>
-                The best place is on the
-                <a href="https://github.com/samshadwell/HNDigest/issues"
-                    >issues page</a
-                >
-                for the project's GitHub repository. Otherwise, you can email me
-                at <a href="mailto:hi@samshadwell.com">hi@samshadwell.com</a>.
-            </p>
-        </details>
-
+                    for the project's GitHub repository. Otherwise, you can
+                    email me at
+                    <a href="mailto:hi@samshadwell.com">hi@samshadwell.com</a>.
+                </p>
+            </details>
+        </main>
         <p class="footer">
             © 2025-2026, Samuel Shadwell. All rights reserved. Not affiliated
             with Hacker News or Y Combinator.
