@@ -45,11 +45,15 @@ h1 {
 }
 
 h2,
-details {
+summary {
     font-size: 24px;
     font-weight: 700;
     margin-top: 20px;
     margin-bottom: 0;
+}
+
+summary h2 {
+    display: inline;
 }
 
 h3 {
