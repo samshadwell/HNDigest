@@ -106,6 +106,12 @@ jobs:
           path: infrastructure/environments/staging
       - name: Apply
         run: tofu apply -auto-approve tfplan
+      - name: Invalidate CloudFront cache
+        run: |
+          DIST_ID=$(tofu output -raw cloudfront_distribution_id)
+          aws cloudfront create-invalidation \
+            --distribution-id "$DIST_ID" \
+            --paths "/*"
 
   # --- Staging Code Deploy ---
   deploy-staging:
@@ -250,6 +256,12 @@ jobs:
           path: infrastructure/environments/production
       - name: Apply
         run: tofu apply -auto-approve tfplan
+      - name: Invalidate CloudFront cache
+        run: |
+          DIST_ID=$(tofu output -raw cloudfront_distribution_id)
+          aws cloudfront create-invalidation \
+            --distribution-id "$DIST_ID" \
+            --paths "/*"
 
   deploy-prod:
     name: Deploy to Production
