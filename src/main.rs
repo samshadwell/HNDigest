@@ -4,7 +4,7 @@ use aws_config::BehaviorVersion;
 use chrono::{DateTime, NaiveTime, Utc};
 use futures::stream::{self, StreamExt};
 use hndigest::digest_builder::DigestBuilder;
-use hndigest::digest_mailer::DigestMailer;
+use hndigest::mailer::Mailer;
 use hndigest::post_snapshotter::PostSnapshotter;
 use hndigest::storage_adapter::StorageAdapter;
 use hndigest::strategies::DigestStrategy;
@@ -74,7 +74,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_sesv2::Client::new(&config);
     let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
-    let mailer = Arc::new(DigestMailer::new(
+    let mailer = Arc::new(Mailer::new(
         ses_client,
         email_from,
         email_reply_to,
@@ -171,7 +171,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
                 .context("Failed to render text template")?;
 
                 mailer
-                    .send_mail(
+                    .send_digest(
                         subject,
                         &html_content,
                         &text_content,

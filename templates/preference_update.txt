@@ -1,0 +1,8 @@
+Your Hacker Digest preferences have been updated
+
+Your Hacker Digest subscription has been updated with a new digest type.
+
+Previous digest type: {{ old_strategy_description }}
+New digest type: {{ new_strategy_description }}
+
+If you'd like to unsubscribe please use the unsubscribe link in any of your digest emails.

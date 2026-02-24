@@ -7,9 +7,9 @@
 use askama::Template;
 use aws_config::BehaviorVersion;
 use aws_sdk_sesv2::Client as SesClient;
-use aws_sdk_sesv2::types::{Body as SesBody, Content, Destination, EmailContent, Message};
 use aws_sdk_ssm::Client as SsmClient;
 use email_address::EmailAddress;
+use hndigest::mailer::Mailer;
 use hndigest::storage_adapter::StorageAdapter;
 use hndigest::strategies::DigestStrategy;
 use hndigest::subscribe;
@@ -34,22 +34,6 @@ use tracing::{error, info, warn};
 struct UnsubscribeConfirmTemplate<'a> {
     email: &'a str,
     token: &'a str,
-}
-
-/// Template for the verification email (HTML).
-#[derive(Template)]
-#[template(path = "verification.html")]
-struct VerificationEmailHtmlTemplate<'a> {
-    verify_url: &'a str,
-    strategy_description: &'a str,
-}
-
-/// Template for the verification email (plaintext).
-#[derive(Template)]
-#[template(path = "verification.txt")]
-struct VerificationEmailTextTemplate<'a> {
-    verify_url: &'a str,
-    strategy_description: &'a str,
 }
 
 /// Request body for the subscribe endpoint.
@@ -121,13 +105,10 @@ fn body_to_string(body: &Body) -> Option<String> {
 
 struct AppState {
     storage: Arc<StorageAdapter>,
-    ses_client: SesClient,
+    mailer: Mailer,
     http_client: reqwest::Client,
-    from_address: String,
-    reply_to_address: String,
     base_url: String,
     turnstile_secret_key: String,
-    ses_configuration_set: String,
 }
 
 #[tokio::main]
@@ -151,6 +132,13 @@ async fn main() -> Result<(), Error> {
         .map_err(|_| Error::from("BASE_URL environment variable must be set"))?;
     let ses_configuration_set = env::var("SES_CONFIGURATION_SET")
         .map_err(|_| Error::from("SES_CONFIGURATION_SET environment variable must be set"))?;
+
+    let mailer = Mailer::new(
+        ses_client,
+        from_address,
+        reply_to_address,
+        ses_configuration_set,
+    );
 
     // I'd love to pass this as an environment variable, but using AWS secrets manager is expensive
     // and this is effectively free
@@ -176,13 +164,10 @@ async fn main() -> Result<(), Error> {
     let storage = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
     let state = Arc::new(AppState {
         storage,
-        ses_client,
+        mailer,
         http_client,
-        from_address,
-        reply_to_address,
         base_url,
         turnstile_secret_key,
-        ses_configuration_set,
     });
 
     run(service_fn(|event| handler(event, state.clone()))).await
@@ -323,6 +308,20 @@ async fn verify_turnstile_token(
     Ok(body.success)
 }
 
+fn subscribe_200_response() -> Response<Body> {
+    json_response(
+        200,
+        r#"{"message": "Check your email to confirm your subscription"}"#,
+    )
+}
+
+fn subscribe_500_response() -> Response<Body> {
+    json_response(
+        500,
+        r#"{"error": "Internal server error, please try again later"}"#,
+    )
+}
+
 /// POST /api/subscribe
 ///
 /// Creates a pending subscription and sends a verification email.
@@ -341,10 +340,7 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
     if !request.website.is_empty() {
         info!("Honeypot field filled - rejecting bot submission");
         // Return success to not tip off bots, but don't actually process
-        return json_response(
-            200,
-            r#"{"message": "Check your email to confirm your subscription"}"#,
-        );
+        return subscribe_200_response();
     }
 
     // Parse strategy
@@ -381,21 +377,54 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
         }
         Err(e) => {
             error!(error = %e, "Turnstile API request failed");
-            return json_response(500, r#"{"error": "CAPTCHA verification unavailable"}"#);
+            return subscribe_500_response();
         }
     }
 
-    // Create pending subscription
+    // Check if a verified subscriber already exists for this email
+    let existing_subscriber = match state.storage.get_subscriber_by_email(&email).await {
+        Ok(s) => s,
+        Err(e) => {
+            error!(error = %e, "Failed to check for existing subscriber");
+            return subscribe_500_response();
+        }
+    };
+
+    if let Some(existing) = existing_subscriber {
+        match subscribe::update_subscription_strategy(&state.storage, existing, strategy).await {
+            Ok(old_strategy) => {
+                if let Err(e) = state
+                    .mailer
+                    .send_preference_update_email(
+                        &email,
+                        &old_strategy.description(),
+                        &strategy.description(),
+                    )
+                    .await
+                {
+                    error!(error = %e, "Failed to send preference update email");
+                    return subscribe_500_response();
+                }
+                // Generic success to avoid leaking information about subscribers
+                return subscribe_200_response();
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to update existing subscription");
+                return subscribe_500_response();
+            }
+        }
+    }
+
+    // No existing verified subscriber - create pending subscription and send verification email
     let pending =
         match subscribe::create_pending_subscription(&state.storage, &email, strategy).await {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "Failed to create pending subscription");
-                return json_response(500, r#"{"error": "Internal server error"}"#);
+                return subscribe_500_response();
             }
         };
 
-    // Send verification email
     let email_str = email.to_string().to_lowercase();
     let verify_url = format!(
         "{}/api/verify?email={}&token={}",
@@ -403,20 +432,17 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
         urlencoding::encode(&email_str),
         pending.token
     );
-    let strategy_description = strategy.description();
-
-    if let Err(e) =
-        send_verification_email(state, &pending.email, &verify_url, &strategy_description).await
+    if let Err(e) = state
+        .mailer
+        .send_verification_email(&pending.email, &verify_url, &strategy.description())
+        .await
     {
         error!(error = %e, email = %pending.email, "Failed to send verification email");
-        return json_response(500, r#"{"error": "Failed to send verification email"}"#);
+        return subscribe_500_response();
     }
 
     info!(email = %pending.email, strategy = %strategy, "Verification email sent");
-    json_response(
-        200,
-        r#"{"message": "Check your email to confirm your subscription"}"#,
-    )
+    subscribe_200_response()
 }
 
 /// GET /api/verify?email=...&token=...
@@ -451,72 +477,4 @@ async fn handle_verify_get(
             redirect("/verify-error.html")
         }
     }
-}
-
-/// Send a verification email to the subscriber.
-async fn send_verification_email(
-    state: &Arc<AppState>,
-    email: &EmailAddress,
-    verify_url: &str,
-    strategy_description: &str,
-) -> anyhow::Result<()> {
-    use anyhow::Context;
-
-    // Render email templates
-    let html_template = VerificationEmailHtmlTemplate {
-        verify_url,
-        strategy_description,
-    };
-    let text_template = VerificationEmailTextTemplate {
-        verify_url,
-        strategy_description,
-    };
-
-    let html_content = html_template
-        .render()
-        .context("Failed to render HTML template")?;
-    let text_content = text_template
-        .render()
-        .context("Failed to render text template")?;
-
-    // Build email
-    let subject = Content::builder()
-        .data("Confirm your Hacker Digest subscription")
-        .charset("UTF-8")
-        .build()?;
-    let html_body = Content::builder()
-        .data(html_content)
-        .charset("UTF-8")
-        .build()?;
-    let text_body = Content::builder()
-        .data(text_content)
-        .charset("UTF-8")
-        .build()?;
-
-    let body = SesBody::builder().html(html_body).text(text_body).build();
-    let message = Message::builder().subject(subject).body(body).build();
-    let destination = Destination::builder()
-        .to_addresses(email.to_string())
-        .build();
-    let email_content = EmailContent::builder().simple(message).build();
-
-    let response = state
-        .ses_client
-        .send_email()
-        .from_email_address(&state.from_address)
-        .reply_to_addresses(&state.reply_to_address)
-        .destination(destination)
-        .content(email_content)
-        .configuration_set_name(&state.ses_configuration_set)
-        .send()
-        .await
-        .context(format!("Failed to send email to {}", email))?;
-
-    info!(
-        message_id = ?response.message_id(),
-        recipient = %email,
-        "Verification email sent"
-    );
-
-    Ok(())
 }
