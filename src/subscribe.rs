@@ -8,6 +8,7 @@ use crate::types::{PendingSubscription, Subscriber, Token};
 use anyhow::Result;
 use email_address::EmailAddress;
 use std::sync::Arc;
+use tracing::info;
 
 /// Create a pending subscription for an email address.
 ///
@@ -22,6 +23,31 @@ pub async fn create_pending_subscription(
     storage.upsert_pending_subscription(&pending).await?;
 
     Ok(pending)
+}
+
+/// Update an existing subscriber's digest strategy in storage.
+///
+/// Returns the previous strategy so the caller can describe the change (e.g. in a
+/// notification email). The subscriber's `subscribed_at` and `unsubscribe_token` are
+/// preserved unchanged.
+pub async fn update_subscription_strategy(
+    storage: &Arc<StorageAdapter>,
+    existing: Subscriber,
+    new_strategy: DigestStrategy,
+) -> Result<DigestStrategy> {
+    let old_strategy = existing.strategy;
+    let updated = Subscriber {
+        strategy: new_strategy,
+        ..existing
+    };
+    storage.upsert_subscriber(&updated).await?;
+    info!(
+        email = %updated.email,
+        old_strategy = %old_strategy,
+        new_strategy = %new_strategy,
+        "Subscriber strategy updated"
+    );
+    Ok(old_strategy)
 }
 
 /// Verify a pending subscription by email and token.
@@ -41,25 +67,12 @@ pub async fn verify_subscription(
         None => return Ok(None),
     };
 
-    // Check token first (before verified_at) to prevent email enumeration
     if &pending.token != token {
         return Ok(None);
     }
 
-    // This check mostly exists to avoid generating a new unsubscribe token and
-    // invalidating any already-existing unsubscribe links
-    if pending.verified_at.is_some() {
-        return Ok(Some(Subscriber::new(pending.email, pending.strategy)));
-    }
-
     let subscriber = Subscriber::new(pending.email.clone(), pending.strategy);
     storage.upsert_subscriber(&subscriber).await?;
-
-    let mut verified_pending = pending;
-    verified_pending.verified_at = Some(chrono::Utc::now());
-    storage
-        .upsert_pending_subscription(&verified_pending)
-        .await?;
 
     Ok(Some(subscriber))
 }

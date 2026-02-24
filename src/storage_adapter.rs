@@ -256,7 +256,7 @@ impl StorageAdapter {
         let email_str = pending.email.to_string().to_lowercase();
         // Note: expires_at is stored as epoch seconds (N) for DynamoDB TTL,
         // while created_at is stored as RFC3339 string for human readability.
-        let mut item = HashMap::from([
+        let item = HashMap::from([
             (
                 "PK".to_string(),
                 AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
@@ -280,14 +280,6 @@ impl StorageAdapter {
                 AttributeValue::N(pending.expires_at.timestamp().to_string()),
             ),
         ]);
-
-        // Only write verified_at if set (for idempotent verification)
-        if let Some(verified_at) = pending.verified_at {
-            item.insert(
-                "verified_at".to_string(),
-                AttributeValue::S(verified_at.to_rfc3339()),
-            );
-        }
 
         self.client
             .put_item()
@@ -321,25 +313,12 @@ impl StorageAdapter {
         output.item.map(pending_subscription_from_item).transpose()
     }
 
-    /// Delete a pending subscription by email.
-    pub async fn delete_pending_subscription(&self, email: &EmailAddress) -> Result<()> {
-        self.client
-            .delete_item()
-            .table_name(&self.table_name)
-            .key(
-                "PK",
-                AttributeValue::S(PENDING_SUBSCRIPTION_PARTITION_KEY.to_string()),
-            )
-            .key("SK", AttributeValue::S(email.to_string().to_lowercase()))
-            .send()
-            .await
-            .context("Failed to delete pending subscription")?;
-
-        Ok(())
-    }
-
-    /// Check if a subscriber already exists with this email address.
-    pub async fn subscriber_exists(&self, email: &EmailAddress) -> Result<bool> {
+    /// Get a subscriber by email address.
+    /// Returns None if no subscriber exists with this email.
+    pub async fn get_subscriber_by_email(
+        &self,
+        email: &EmailAddress,
+    ) -> Result<Option<Subscriber>> {
         let output = self
             .client
             .get_item()
@@ -349,12 +328,11 @@ impl StorageAdapter {
                 AttributeValue::S(SUBSCRIBER_PARTITION_KEY.to_string()),
             )
             .key("SK", AttributeValue::S(email.to_string().to_lowercase()))
-            .projection_expression("email")
             .send()
             .await
-            .context("Failed to check subscriber existence")?;
+            .context("Failed to get subscriber")?;
 
-        Ok(output.item.is_some())
+        output.item.map(subscriber_from_item).transpose()
     }
 }
 
@@ -498,18 +476,11 @@ fn pending_subscription_from_item(
     let expires_at = DateTime::from_timestamp(expires_at_ts, 0)
         .ok_or_else(|| anyhow::anyhow!("Invalid expires_at timestamp value"))?;
 
-    // verified_at is optional - only present after user clicks verification link
-    let verified_at = item
-        .get("verified_at")
-        .and_then(|v| v.as_s().ok())
-        .and_then(|s| s.parse::<DateTime<Utc>>().ok());
-
     Ok(PendingSubscription {
         token,
         email,
         strategy,
         created_at,
         expires_at,
-        verified_at,
     })
 }
