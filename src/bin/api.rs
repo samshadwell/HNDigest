@@ -9,8 +9,8 @@ use aws_config::BehaviorVersion;
 use aws_sdk_sesv2::Client as SesClient;
 use aws_sdk_ssm::Client as SsmClient;
 use email_address::EmailAddress;
-use hndigest::mailer::Mailer;
-use hndigest::storage_adapter::StorageAdapter;
+use hndigest::mailer::{Mailer, SesMailer};
+use hndigest::storage::{LambdaStorage, Storage};
 use hndigest::strategies::DigestStrategy;
 use hndigest::subscribe;
 use hndigest::types::Token;
@@ -22,6 +22,39 @@ use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{error, info, warn};
+
+// ============================================================================
+// Captcha trait
+// ============================================================================
+
+#[allow(async_fn_in_trait)]
+trait Captcha: Send + Sync {
+    async fn verify(&self, token: &str) -> anyhow::Result<bool>;
+}
+
+struct TurnstileCaptcha {
+    http_client: reqwest::Client,
+    secret_key: String,
+}
+
+#[derive(Deserialize)]
+struct TurnstileVerifyResponse {
+    success: bool,
+}
+
+impl Captcha for TurnstileCaptcha {
+    async fn verify(&self, token: &str) -> anyhow::Result<bool> {
+        let params = [("secret", self.secret_key.as_str()), ("response", token)];
+        let response = self
+            .http_client
+            .post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
+            .form(&params)
+            .send()
+            .await?;
+        let body: TurnstileVerifyResponse = response.json().await?;
+        Ok(body.success)
+    }
+}
 
 // ============================================================================
 // Templates
@@ -45,12 +78,6 @@ struct SubscribeRequest {
     website: String, // Honeypot field - should be empty
     #[serde(default)]
     turnstile_token: String,
-}
-
-/// Response from Cloudflare Turnstile siteverify API.
-#[derive(Debug, Deserialize)]
-struct TurnstileVerifyResponse {
-    success: bool,
 }
 
 // ============================================================================
@@ -95,6 +122,7 @@ fn body_to_string(body: &Body) -> Option<String> {
         Body::Text(s) => Some(s.clone()),
         Body::Binary(b) => std::str::from_utf8(b).ok().map(String::from),
         Body::Empty => None,
+        // Body is #[non_exhaustive]; this arm guards against future variants.
         _ => None,
     }
 }
@@ -103,12 +131,11 @@ fn body_to_string(body: &Body) -> Option<String> {
 // Lambda Handler
 // ============================================================================
 
-struct AppState {
-    storage: Arc<StorageAdapter>,
-    mailer: Mailer,
-    http_client: reqwest::Client,
+struct AppState<S, M, C> {
+    storage: Arc<S>,
+    mailer: Arc<M>,
+    captcha: C,
     base_url: String,
-    turnstile_secret_key: String,
 }
 
 #[tokio::main]
@@ -133,15 +160,13 @@ async fn main() -> Result<(), Error> {
     let ses_configuration_set = env::var("SES_CONFIGURATION_SET")
         .map_err(|_| Error::from("SES_CONFIGURATION_SET environment variable must be set"))?;
 
-    let mailer = Mailer::new(
+    let mailer = SesMailer::new(
         ses_client,
         from_address,
         reply_to_address,
         ses_configuration_set,
     );
 
-    // I'd love to pass this as an environment variable, but using AWS secrets manager is expensive
-    // and this is effectively free
     let ssm_client = SsmClient::new(&config);
     let turnstile_secret_key_param = env::var("TURNSTILE_SECRET_KEY_PARAM")
         .map_err(|_| Error::from("TURNSTILE_SECRET_KEY_PARAM environment variable must be set"))?;
@@ -160,20 +185,29 @@ async fn main() -> Result<(), Error> {
             )
         })?;
 
-    let http_client = reqwest::Client::new();
-    let storage = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
+    let storage = Arc::new(LambdaStorage::new(dynamodb_client, dynamodb_table));
     let state = Arc::new(AppState {
         storage,
-        mailer,
-        http_client,
+        mailer: Arc::new(mailer),
+        captcha: TurnstileCaptcha {
+            http_client: reqwest::Client::new(),
+            secret_key: turnstile_secret_key,
+        },
         base_url,
-        turnstile_secret_key,
     });
 
     run(service_fn(|event| handler(event, state.clone()))).await
 }
 
-async fn handler(event: Request, state: Arc<AppState>) -> Result<Response<Body>, Error> {
+async fn handler<S, M, C>(
+    event: Request,
+    state: Arc<AppState<S, M, C>>,
+) -> Result<Response<Body>, Error>
+where
+    S: Storage,
+    M: Mailer,
+    C: Captcha,
+{
     let method = event.method();
     let path = event.uri().path();
 
@@ -215,10 +249,9 @@ async fn handler(event: Request, state: Arc<AppState>) -> Result<Response<Body>,
 /// GET /api/unsubscribe?token=...
 ///
 /// Shows confirmation page if token is valid, redirects to error page otherwise.
-async fn handle_unsubscribe_get(storage: &Arc<StorageAdapter>, token: &Token) -> Response<Body> {
-    match unsubscribe::lookup_subscriber(storage, token).await {
+async fn handle_unsubscribe_get<S: Storage>(storage: &Arc<S>, token: &Token) -> Response<Body> {
+    match storage.get_subscriber_by_unsubscribe_token(token).await {
         Ok(Some(subscriber)) => {
-            // Render confirmation page
             let email_str = subscriber.email.to_string();
             let token_str = token.to_string();
             let template = UnsubscribeConfirmTemplate {
@@ -233,10 +266,7 @@ async fn handle_unsubscribe_get(storage: &Arc<StorageAdapter>, token: &Token) ->
                 }
             }
         }
-        Ok(None) => {
-            // Token not found - redirect to error page
-            redirect("/unsubscribe-error.html")
-        }
+        Ok(None) => redirect("/unsubscribe-error.html"),
         Err(e) => {
             error!(error = %e, "Error looking up subscriber");
             redirect("/unsubscribe-error.html")
@@ -249,8 +279,8 @@ async fn handle_unsubscribe_get(storage: &Arc<StorageAdapter>, token: &Token) ->
 /// Processes unsubscribe request. Handles both browser form submissions
 /// (redirects to success/error page) and RFC 8058 one-click unsubscribe
 /// (returns plain text response).
-async fn handle_unsubscribe_post(
-    storage: &Arc<StorageAdapter>,
+async fn handle_unsubscribe_post<S: Storage>(
+    storage: &Arc<S>,
     token: &Token,
     body: Option<&str>,
 ) -> Response<Body> {
@@ -265,16 +295,13 @@ async fn handle_unsubscribe_post(
 
     match unsubscribe::remove_subscriber(storage, token).await {
         Ok(true) => {
-            // Successfully unsubscribed
             if is_one_click {
-                // RFC 8058 expects 200 response, not redirect
                 text_response(200, "Unsubscribed successfully")
             } else {
                 redirect("/unsubscribe-success.html")
             }
         }
         Ok(false) => {
-            // Token not found
             if is_one_click {
                 text_response(404, "Token not found")
             } else {
@@ -290,22 +317,6 @@ async fn handle_unsubscribe_post(
             }
         }
     }
-}
-
-/// Verify a Cloudflare Turnstile CAPTCHA token.
-async fn verify_turnstile_token(
-    http_client: &reqwest::Client,
-    secret_key: &str,
-    token: &str,
-) -> Result<bool, reqwest::Error> {
-    let params = [("secret", secret_key), ("response", token)];
-    let response = http_client
-        .post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
-        .form(&params)
-        .send()
-        .await?;
-    let body: TurnstileVerifyResponse = response.json().await?;
-    Ok(body.success)
 }
 
 fn subscribe_200_response() -> Response<Body> {
@@ -326,8 +337,15 @@ fn subscribe_500_response() -> Response<Body> {
 ///
 /// Creates a pending subscription and sends a verification email.
 /// Expects JSON body with `email` and `strategy` fields.
-async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Body> {
-    // Parse request body
+async fn handle_subscribe_post<S, M, C>(
+    state: &Arc<AppState<S, M, C>>,
+    body: &str,
+) -> Response<Body>
+where
+    S: Storage,
+    M: Mailer,
+    C: Captcha,
+{
     let request: SubscribeRequest = match serde_json::from_str(body) {
         Ok(r) => r,
         Err(e) => {
@@ -339,7 +357,6 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
     // Check honeypot field
     if !request.website.is_empty() {
         info!("Honeypot field filled - rejecting bot submission");
-        // Return success to not tip off bots, but don't actually process
         return subscribe_200_response();
     }
 
@@ -363,20 +380,14 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
         return json_response(400, r#"{"error": "CAPTCHA verification required"}"#);
     }
 
-    match verify_turnstile_token(
-        &state.http_client,
-        &state.turnstile_secret_key,
-        &request.turnstile_token,
-    )
-    .await
-    {
+    match state.captcha.verify(&request.turnstile_token).await {
         Ok(true) => {}
         Ok(false) => {
-            warn!("Turnstile CAPTCHA verification failed");
+            warn!("CAPTCHA verification failed");
             return json_response(400, r#"{"error": "CAPTCHA verification failed"}"#);
         }
         Err(e) => {
-            error!(error = %e, "Turnstile API request failed");
+            error!(error = %e, "Captcha API request failed");
             return subscribe_500_response();
         }
     }
@@ -405,7 +416,6 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
                     error!(error = %e, "Failed to send preference update email");
                     return subscribe_500_response();
                 }
-                // Generic success to avoid leaking information about subscribers
                 return subscribe_200_response();
             }
             Err(e) => {
@@ -448,11 +458,16 @@ async fn handle_subscribe_post(state: &Arc<AppState>, body: &str) -> Response<Bo
 /// GET /api/verify?email=...&token=...
 ///
 /// Verifies a pending subscription and creates the subscriber.
-async fn handle_verify_get(
-    state: &Arc<AppState>,
+async fn handle_verify_get<S, M, C>(
+    state: &Arc<AppState<S, M, C>>,
     maybe_email: &str,
     maybe_token: &str,
-) -> Response<Body> {
+) -> Response<Body>
+where
+    S: Storage,
+    M: Mailer,
+    C: Captcha,
+{
     let email = match EmailAddress::from_str(maybe_email) {
         Ok(e) => e,
         Err(_) => return redirect("/verify-error.html"),
@@ -476,5 +491,494 @@ async fn handle_verify_get(
             error!(error = %e, email = %email, "Error verifying subscription");
             redirect("/verify-error.html")
         }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{DateTime, Utc};
+    use email_address::EmailAddress;
+    use hndigest::storage::Storage;
+    use hndigest::strategies::DigestStrategy;
+    use hndigest::types::{PendingSubscription, Post, Subscriber, Token};
+    use std::collections::HashMap;
+    use std::str::FromStr;
+    use std::sync::Mutex;
+
+    // -----------------------------------------------------------------------
+    // FakeStorage
+    // -----------------------------------------------------------------------
+
+    #[derive(Default)]
+    struct FakeStorage {
+        subscribers: Mutex<HashMap<String, Subscriber>>,
+        pending: Mutex<HashMap<String, PendingSubscription>>,
+    }
+
+    impl FakeStorage {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn with_subscriber(self, s: Subscriber) -> Self {
+            self.subscribers
+                .lock()
+                .unwrap()
+                .insert(s.email.to_string().to_lowercase(), s);
+            self
+        }
+
+        fn with_pending(self, p: PendingSubscription) -> Self {
+            self.pending
+                .lock()
+                .unwrap()
+                .insert(p.email.to_string().to_lowercase(), p);
+            self
+        }
+
+        fn get_subscriber(&self, email: &str) -> Option<Subscriber> {
+            self.subscribers
+                .lock()
+                .unwrap()
+                .get(&email.to_lowercase())
+                .cloned()
+        }
+
+        fn get_pending(&self, email: &str) -> Option<PendingSubscription> {
+            self.pending
+                .lock()
+                .unwrap()
+                .get(&email.to_lowercase())
+                .cloned()
+        }
+    }
+
+    impl Storage for FakeStorage {
+        async fn snapshot_posts(
+            &self,
+            _: &HashMap<String, Post>,
+            _: DateTime<Utc>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn save_digest(&self, _: &str, _: DateTime<Utc>, _: &[Post]) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn fetch_digest(
+            &self,
+            _: &str,
+            _: DateTime<Utc>,
+        ) -> anyhow::Result<Option<Vec<Post>>> {
+            Ok(None)
+        }
+        async fn get_subscriber_by_unsubscribe_token(
+            &self,
+            token: &Token,
+        ) -> anyhow::Result<Option<Subscriber>> {
+            Ok(self
+                .subscribers
+                .lock()
+                .unwrap()
+                .values()
+                .find(|s| s.unsubscribe_token == *token)
+                .cloned())
+        }
+        async fn get_all_subscribers(&self) -> anyhow::Result<Vec<Subscriber>> {
+            Ok(self.subscribers.lock().unwrap().values().cloned().collect())
+        }
+        async fn upsert_subscriber(&self, s: &Subscriber) -> anyhow::Result<()> {
+            self.subscribers
+                .lock()
+                .unwrap()
+                .insert(s.email.to_string().to_lowercase(), s.clone());
+            Ok(())
+        }
+        async fn remove_subscriber(&self, email: &EmailAddress) -> anyhow::Result<()> {
+            self.subscribers
+                .lock()
+                .unwrap()
+                .remove(&email.to_string().to_lowercase());
+            Ok(())
+        }
+        async fn upsert_pending_subscription(&self, p: &PendingSubscription) -> anyhow::Result<()> {
+            self.pending
+                .lock()
+                .unwrap()
+                .insert(p.email.to_string().to_lowercase(), p.clone());
+            Ok(())
+        }
+        async fn get_pending_subscription(
+            &self,
+            email: &EmailAddress,
+        ) -> anyhow::Result<Option<PendingSubscription>> {
+            Ok(self
+                .pending
+                .lock()
+                .unwrap()
+                .get(&email.to_string().to_lowercase())
+                .cloned())
+        }
+        async fn get_subscriber_by_email(
+            &self,
+            email: &EmailAddress,
+        ) -> anyhow::Result<Option<Subscriber>> {
+            Ok(self
+                .subscribers
+                .lock()
+                .unwrap()
+                .get(&email.to_string().to_lowercase())
+                .cloned())
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // SpyMailer
+    // -----------------------------------------------------------------------
+
+    #[derive(Default)]
+    struct SpyMailer {
+        emails: Mutex<Vec<(String, String)>>, // (recipient, subject)
+    }
+
+    impl SpyMailer {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn email_count(&self) -> usize {
+            self.emails.lock().unwrap().len()
+        }
+
+        fn sent_subjects(&self) -> Vec<String> {
+            self.emails
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(_, s)| s.clone())
+                .collect()
+        }
+    }
+
+    impl Mailer for SpyMailer {
+        async fn send_email(
+            &self,
+            recipient: &EmailAddress,
+            subject: &str,
+            _html: &str,
+            _text: &str,
+            _extra_headers: &[(&str, &str)],
+        ) -> anyhow::Result<()> {
+            self.emails
+                .lock()
+                .unwrap()
+                .push((recipient.to_string(), subject.to_string()));
+            Ok(())
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // FakeCaptcha
+    // -----------------------------------------------------------------------
+
+    struct FakeCaptcha {
+        success: bool,
+    }
+
+    impl FakeCaptcha {
+        fn pass() -> Self {
+            Self { success: true }
+        }
+
+        fn fail() -> Self {
+            Self { success: false }
+        }
+    }
+
+    impl Captcha for FakeCaptcha {
+        async fn verify(&self, _token: &str) -> anyhow::Result<bool> {
+            Ok(self.success)
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    fn make_state(
+        storage: FakeStorage,
+        mailer: SpyMailer,
+        captcha: FakeCaptcha,
+    ) -> Arc<AppState<FakeStorage, SpyMailer, FakeCaptcha>> {
+        Arc::new(AppState {
+            storage: Arc::new(storage),
+            mailer: Arc::new(mailer),
+            captcha,
+            base_url: "https://example.com".to_string(),
+        })
+    }
+
+    fn subscribe_body(email: &str, strategy: &str, turnstile: &str) -> String {
+        serde_json::json!({
+            "email": email,
+            "strategy": strategy,
+            "turnstile_token": turnstile,
+        })
+        .to_string()
+    }
+
+    fn status(r: &Response<Body>) -> u16 {
+        r.status().as_u16()
+    }
+
+    fn location(r: &Response<Body>) -> &str {
+        r.headers()
+            .get("Location")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+    }
+
+    // -----------------------------------------------------------------------
+    // POST /api/subscribe
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn subscribe_honeypot_filled_returns_200_no_side_effects() {
+        let state = make_state(FakeStorage::new(), SpyMailer::new(), FakeCaptcha::pass());
+        let body = serde_json::json!({
+            "email": "bot@example.com",
+            "strategy": "TOP_N#10",
+            "turnstile_token": "tok",
+            "website": "http://spam.com",
+        })
+        .to_string();
+
+        let resp = handle_subscribe_post(&state, &body).await;
+
+        assert_eq!(status(&resp), 200);
+        assert_eq!(state.mailer.email_count(), 0);
+        assert!(state.storage.get_pending("bot@example.com").is_none());
+    }
+
+    #[tokio::test]
+    async fn subscribe_invalid_email_returns_400() {
+        let state = make_state(FakeStorage::new(), SpyMailer::new(), FakeCaptcha::pass());
+        let body = subscribe_body("not-an-email", "TOP_N#10", "tok");
+
+        let resp = handle_subscribe_post(&state, &body).await;
+
+        assert_eq!(status(&resp), 400);
+        assert_eq!(state.mailer.email_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn subscribe_invalid_strategy_returns_400() {
+        let state = make_state(FakeStorage::new(), SpyMailer::new(), FakeCaptcha::pass());
+        let body = subscribe_body("user@example.com", "BOGUS_STRATEGY", "tok");
+
+        let resp = handle_subscribe_post(&state, &body).await;
+
+        assert_eq!(status(&resp), 400);
+        assert_eq!(state.mailer.email_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn subscribe_captcha_fails_returns_400() {
+        let state = make_state(FakeStorage::new(), SpyMailer::new(), FakeCaptcha::fail());
+        let body = subscribe_body("user@example.com", "TOP_N#10", "bad-tok");
+
+        let resp = handle_subscribe_post(&state, &body).await;
+
+        assert_eq!(status(&resp), 400);
+        assert_eq!(state.mailer.email_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_user_stores_pending_and_sends_verification_email() {
+        let state = make_state(FakeStorage::new(), SpyMailer::new(), FakeCaptcha::pass());
+        let body = subscribe_body("new@example.com", "TOP_N#10", "valid-tok");
+
+        let resp = handle_subscribe_post(&state, &body).await;
+
+        assert_eq!(status(&resp), 200);
+        assert!(state.storage.get_pending("new@example.com").is_some());
+        assert_eq!(state.mailer.email_count(), 1);
+        assert!(
+            state
+                .mailer
+                .sent_subjects()
+                .contains(&"Confirm your Hacker Digest subscription".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_existing_subscriber_updates_strategy_and_sends_preference_email() {
+        let existing = Subscriber::new(
+            EmailAddress::from_str("existing@example.com").unwrap(),
+            DigestStrategy::TopN(10),
+        );
+        let storage = FakeStorage::new().with_subscriber(existing);
+        let state = make_state(storage, SpyMailer::new(), FakeCaptcha::pass());
+        let body = subscribe_body("existing@example.com", "TOP_N#50", "valid-tok");
+
+        let resp = handle_subscribe_post(&state, &body).await;
+
+        assert_eq!(status(&resp), 200);
+        let updated = state
+            .storage
+            .get_subscriber("existing@example.com")
+            .unwrap();
+        assert_eq!(updated.strategy, DigestStrategy::TopN(50));
+        assert_eq!(state.mailer.email_count(), 1);
+        assert!(
+            state
+                .mailer
+                .sent_subjects()
+                .contains(&"Your Hacker Digest preferences have been updated".to_string())
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // GET /api/verify
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn verify_valid_token_creates_subscriber_and_redirects_to_success() {
+        let pending = PendingSubscription::new(
+            EmailAddress::from_str("verify@example.com").unwrap(),
+            DigestStrategy::TopN(10),
+        );
+        let token_str = pending.token.to_string();
+        let storage = FakeStorage::new().with_pending(pending);
+        let state = make_state(storage, SpyMailer::new(), FakeCaptcha::pass());
+
+        let resp = handle_verify_get(&state, "verify@example.com", &token_str).await;
+
+        assert_eq!(status(&resp), 303);
+        assert_eq!(location(&resp), "/verify-success.html");
+        assert!(state.storage.get_subscriber("verify@example.com").is_some());
+    }
+
+    #[tokio::test]
+    async fn verify_wrong_token_redirects_to_error() {
+        let pending = PendingSubscription::new(
+            EmailAddress::from_str("verify@example.com").unwrap(),
+            DigestStrategy::TopN(10),
+        );
+        let storage = FakeStorage::new().with_pending(pending);
+        let state = make_state(storage, SpyMailer::new(), FakeCaptcha::pass());
+
+        let resp = handle_verify_get(&state, "verify@example.com", "wrong-token").await;
+
+        assert_eq!(status(&resp), 303);
+        assert_eq!(location(&resp), "/verify-error.html");
+        assert!(state.storage.get_subscriber("verify@example.com").is_none());
+    }
+
+    #[tokio::test]
+    async fn verify_invalid_email_redirects_to_error() {
+        let state = make_state(FakeStorage::new(), SpyMailer::new(), FakeCaptcha::pass());
+
+        let resp = handle_verify_get(&state, "not-an-email", "some-token").await;
+
+        assert_eq!(status(&resp), 303);
+        assert_eq!(location(&resp), "/verify-error.html");
+    }
+
+    // -----------------------------------------------------------------------
+    // GET /api/unsubscribe
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn unsubscribe_get_valid_token_returns_confirmation_page() {
+        let sub = Subscriber::new(
+            EmailAddress::from_str("unsub@example.com").unwrap(),
+            DigestStrategy::TopN(10),
+        );
+        let token = sub.unsubscribe_token.clone();
+        let storage = Arc::new(FakeStorage::new().with_subscriber(sub));
+
+        let resp = handle_unsubscribe_get(&storage, &token).await;
+
+        assert_eq!(status(&resp), 200);
+        // Response body should be HTML containing the email address
+        if let Body::Text(html) = resp.into_body() {
+            assert!(html.contains("unsub@example.com"));
+        } else {
+            panic!("Expected text body");
+        }
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_get_unknown_token_redirects_to_error() {
+        let storage = Arc::new(FakeStorage::new());
+        let token: Token = "unknown".parse().unwrap();
+
+        let resp = handle_unsubscribe_get(&storage, &token).await;
+
+        assert_eq!(status(&resp), 303);
+        assert_eq!(location(&resp), "/unsubscribe-error.html");
+    }
+
+    // -----------------------------------------------------------------------
+    // POST /api/unsubscribe
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn unsubscribe_post_browser_valid_token_redirects_to_success() {
+        let sub = Subscriber::new(
+            EmailAddress::from_str("unsub@example.com").unwrap(),
+            DigestStrategy::TopN(10),
+        );
+        let token = sub.unsubscribe_token.clone();
+        let storage = Arc::new(FakeStorage::new().with_subscriber(sub));
+
+        let resp = handle_unsubscribe_post(&storage, &token, None).await;
+
+        assert_eq!(status(&resp), 303);
+        assert_eq!(location(&resp), "/unsubscribe-success.html");
+        assert!(storage.get_subscriber("unsub@example.com").is_none());
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_post_one_click_returns_200_text() {
+        let sub = Subscriber::new(
+            EmailAddress::from_str("oneclick@example.com").unwrap(),
+            DigestStrategy::TopN(10),
+        );
+        let token = sub.unsubscribe_token.clone();
+        let storage = Arc::new(FakeStorage::new().with_subscriber(sub));
+
+        let resp =
+            handle_unsubscribe_post(&storage, &token, Some("List-Unsubscribe=One-Click")).await;
+
+        assert_eq!(status(&resp), 200);
+        assert!(storage.get_subscriber("oneclick@example.com").is_none());
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_post_unknown_token_browser_redirects_to_error() {
+        let storage = Arc::new(FakeStorage::new());
+        let token: Token = "bogus".parse().unwrap();
+
+        let resp = handle_unsubscribe_post(&storage, &token, None).await;
+
+        assert_eq!(status(&resp), 303);
+        assert_eq!(location(&resp), "/unsubscribe-error.html");
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_post_unknown_token_one_click_returns_404() {
+        let storage = Arc::new(FakeStorage::new());
+        let token: Token = "bogus".parse().unwrap();
+
+        let resp =
+            handle_unsubscribe_post(&storage, &token, Some("List-Unsubscribe=One-Click")).await;
+
+        assert_eq!(status(&resp), 404);
     }
 }

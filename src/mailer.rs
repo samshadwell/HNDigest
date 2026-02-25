@@ -5,6 +5,10 @@ use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message, Me
 use email_address::EmailAddress;
 use tracing::info;
 
+// ============================================================================
+// Email templates (used by default Mailer method implementations)
+// ============================================================================
+
 #[derive(Template)]
 #[template(path = "verification.html")]
 struct VerificationEmailHtmlTemplate<'a> {
@@ -33,58 +37,29 @@ struct PreferenceUpdateEmailTextTemplate<'a> {
     new_strategy_description: &'a str,
 }
 
-pub struct Mailer {
-    ses_client: Client,
-    from_address: String,
-    reply_to_address: String,
-    configuration_set_name: String,
-}
+// ============================================================================
+// Mailer trait
+// ============================================================================
 
-impl Mailer {
-    pub fn new(
-        ses_client: Client,
-        from_address: String,
-        reply_to_address: String,
-        configuration_set_name: String,
-    ) -> Self {
-        Self {
-            ses_client,
-            from_address,
-            reply_to_address,
-            configuration_set_name,
-        }
-    }
-
-    /// Send a digest email with RFC 8058 List-Unsubscribe headers.
-    pub async fn send_digest(
+/// Core email-sending primitive. Implementations handle transport concerns
+/// (SES request construction, credentials, etc.).
+///
+/// Extra headers are passed as `(name, value)` string pairs so that
+/// implementations are not coupled to AWS SDK types.
+#[allow(async_fn_in_trait)]
+pub trait Mailer: Send + Sync {
+    async fn send_email(
         &self,
+        recipient: &EmailAddress,
         subject: &str,
         html_content: &str,
         text_content: &str,
-        recipient: &EmailAddress,
-        unsubscribe_url: &str,
-    ) -> Result<()> {
-        let list_unsubscribe = MessageHeader::builder()
-            .name("List-Unsubscribe")
-            .value(format!("<{}>", unsubscribe_url))
-            .build()?;
-        let list_unsubscribe_post = MessageHeader::builder()
-            .name("List-Unsubscribe-Post")
-            .value("List-Unsubscribe=One-Click")
-            .build()?;
-
-        self.send_email(
-            recipient,
-            subject,
-            html_content,
-            text_content,
-            &[list_unsubscribe, list_unsubscribe_post],
-        )
-        .await
-    }
+        extra_headers: &[(&str, &str)],
+    ) -> Result<()>;
 
     /// Send a subscription verification email.
-    pub async fn send_verification_email(
+    /// Template rendering happens here; only `send_email` is transport-coupled.
+    async fn send_verification_email(
         &self,
         recipient: &EmailAddress,
         verify_url: &str,
@@ -113,7 +88,7 @@ impl Mailer {
     }
 
     /// Send a preference update notification email.
-    pub async fn send_preference_update_email(
+    async fn send_preference_update_email(
         &self,
         recipient: &EmailAddress,
         old_strategy_description: &str,
@@ -141,13 +116,69 @@ impl Mailer {
         .await
     }
 
+    /// Send a digest email with RFC 8058 List-Unsubscribe headers.
+    ///
+    /// The caller is responsible for rendering `html_content` and `text_content`
+    /// (typically from Askama templates in the digest lambda handler).
+    async fn send_digest(
+        &self,
+        subject: &str,
+        html_content: &str,
+        text_content: &str,
+        recipient: &EmailAddress,
+        unsubscribe_url: &str,
+    ) -> Result<()> {
+        let list_unsub_value = format!("<{}>", unsubscribe_url);
+        let extra_headers: &[(&str, &str)] = &[
+            ("List-Unsubscribe", &list_unsub_value),
+            ("List-Unsubscribe-Post", "List-Unsubscribe=One-Click"),
+        ];
+        self.send_email(
+            recipient,
+            subject,
+            html_content,
+            text_content,
+            extra_headers,
+        )
+        .await
+    }
+}
+
+// ============================================================================
+// SesMailer — AWS SES v2 implementation
+// ============================================================================
+
+pub struct SesMailer {
+    ses_client: Client,
+    from_address: String,
+    reply_to_address: String,
+    configuration_set_name: String,
+}
+
+impl SesMailer {
+    pub fn new(
+        ses_client: Client,
+        from_address: String,
+        reply_to_address: String,
+        configuration_set_name: String,
+    ) -> Self {
+        Self {
+            ses_client,
+            from_address,
+            reply_to_address,
+            configuration_set_name,
+        }
+    }
+}
+
+impl Mailer for SesMailer {
     async fn send_email(
         &self,
         recipient: &EmailAddress,
         subject: &str,
         html_content: &str,
         text_content: &str,
-        extra_headers: &[MessageHeader],
+        extra_headers: &[(&str, &str)],
     ) -> Result<()> {
         let subject_content = Content::builder().data(subject).charset("UTF-8").build()?;
         let html_body = Content::builder()
@@ -162,8 +193,9 @@ impl Mailer {
         let body = Body::builder().html(html_body).text(text_body).build();
 
         let mut message_builder = Message::builder().subject(subject_content).body(body);
-        for header in extra_headers {
-            message_builder = message_builder.headers(header.clone());
+        for (name, value) in extra_headers {
+            let header = MessageHeader::builder().name(*name).value(*value).build()?;
+            message_builder = message_builder.headers(header);
         }
         let message = message_builder.build();
 

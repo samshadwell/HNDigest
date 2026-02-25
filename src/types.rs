@@ -116,3 +116,56 @@ impl PendingSubscription {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::strategies::DigestStrategy;
+    use std::str::FromStr;
+
+    #[test]
+    fn token_empty_string_is_rejected() {
+        assert!("".parse::<Token>().is_err());
+        assert!(Token::try_from("".to_string()).is_err());
+    }
+
+    #[test]
+    fn token_non_empty_string_is_accepted() {
+        let t: Token = "abc".parse().unwrap();
+        assert_eq!(t.to_string(), "abc");
+    }
+
+    #[test]
+    fn token_generate_is_non_empty() {
+        let t = Token::generate();
+        assert!(!t.to_string().is_empty());
+    }
+
+    #[test]
+    fn token_serde_roundtrip() {
+        let t = Token::generate();
+        let json = serde_json::to_string(&t).unwrap();
+        let t2: Token = serde_json::from_str(&json).unwrap();
+        assert_eq!(t, t2);
+    }
+
+    #[test]
+    fn token_empty_serde_is_rejected() {
+        let result: Result<Token, _> = serde_json::from_str(r#""""#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pending_subscription_expires_24h_after_creation() {
+        let email = EmailAddress::from_str("test@example.com").unwrap();
+        let before = Utc::now();
+        let pending = PendingSubscription::new(email, DigestStrategy::TopN(10));
+        let after = Utc::now();
+
+        let min_expires = before + chrono::Duration::hours(24);
+        let max_expires = after + chrono::Duration::hours(24);
+
+        assert!(pending.expires_at >= min_expires);
+        assert!(pending.expires_at <= max_expires);
+    }
+}

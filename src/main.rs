@@ -5,8 +5,9 @@ use chrono::{DateTime, NaiveTime, Utc};
 use futures::stream::{self, StreamExt};
 use hndigest::digest_builder::DigestBuilder;
 use hndigest::mailer::Mailer;
+use hndigest::post_fetcher::AlgoliaPostFetcher;
 use hndigest::post_snapshotter::PostSnapshotter;
-use hndigest::storage_adapter::StorageAdapter;
+use hndigest::storage::{LambdaStorage, Storage};
 use hndigest::strategies::DigestStrategy;
 use hndigest::types::Post;
 use lambda_runtime::{Error, LambdaEvent, service_fn};
@@ -46,7 +47,6 @@ async fn main() -> Result<(), Error> {
 async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     info!("Starting scheduled email handler...");
 
-    // Read configuration from environment variables
     let run_hour_utc: u32 = env::var("RUN_HOUR_UTC")
         .map_err(|_| Error::from("RUN_HOUR_UTC environment variable must be set"))?
         .parse()
@@ -73,14 +73,14 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_sesv2::Client::new(&config);
-    let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
-    let mailer = Arc::new(Mailer::new(
+    let storage_adapter = Arc::new(LambdaStorage::new(dynamodb_client, dynamodb_table));
+    let mailer = Arc::new(hndigest::mailer::SesMailer::new(
         ses_client,
         email_from,
         email_reply_to,
         ses_configuration_set,
     ));
-    let snapshotter = PostSnapshotter::new(&storage_adapter);
+    let snapshotter = PostSnapshotter::new(Arc::clone(&storage_adapter), AlgoliaPostFetcher::new());
 
     // Step 1: Snapshot all posts
     info!("Snapshotting posts...");
@@ -150,7 +150,6 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
                     }
                 };
 
-                // Generate personalized unsubscribe URL
                 let unsubscribe_url = format!(
                     "{}/api/unsubscribe?token={}",
                     base_url, subscriber.unsubscribe_token
@@ -185,7 +184,6 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
         .collect()
         .await;
 
-    // Log results
     let success_count = send_results.iter().filter(|r| r.is_ok()).count();
     let failure_count = send_results.iter().filter(|r| r.is_err()).count();
 
@@ -211,10 +209,10 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
 
 /// Build digests for all strategies in parallel.
 /// Returns a map from strategy to the posts for that digest.
-async fn build_all_digests(
+async fn build_all_digests<S: Storage>(
     strategies: &[DigestStrategy],
     date: DateTime<Utc>,
-    storage_adapter: &Arc<StorageAdapter>,
+    storage_adapter: &Arc<S>,
     all_posts: &[Post],
 ) -> Result<HashMap<DigestStrategy, Vec<Post>>, Error> {
     let handles: Vec<_> = strategies
