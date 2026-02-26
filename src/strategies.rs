@@ -223,9 +223,7 @@ mod tests {
 
     #[test]
     fn top_n_select_returns_at_most_n_posts() {
-        let posts: Vec<Post> = (0..20)
-            .map(|i| make_post(&i.to_string(), i as i32))
-            .collect();
+        let posts: Vec<Post> = (0..20).map(|i| make_post(&i.to_string(), i)).collect();
         let selected = DigestStrategy::TopN(5).select(&posts);
         assert_eq!(selected.len(), 5);
     }
