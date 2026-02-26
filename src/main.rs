@@ -1,12 +1,12 @@
 use anyhow::Context;
-use askama::Template;
 use aws_config::BehaviorVersion;
 use chrono::{DateTime, NaiveTime, Utc};
 use futures::stream::{self, StreamExt};
 use hndigest::digest_builder::DigestBuilder;
-use hndigest::mailer::Mailer;
+use hndigest::mailer::{Mailer, render_digest_html, render_digest_text};
+use hndigest::post_fetcher::AlgoliaPostFetcher;
 use hndigest::post_snapshotter::PostSnapshotter;
-use hndigest::storage_adapter::StorageAdapter;
+use hndigest::storage::{LambdaStorage, Storage};
 use hndigest::strategies::DigestStrategy;
 use hndigest::types::Post;
 use lambda_runtime::{Error, LambdaEvent, service_fn};
@@ -17,20 +17,6 @@ use std::sync::Arc;
 use tracing::{error, info};
 
 const MAX_CONCURRENT_EMAILS: usize = 10;
-
-#[derive(Template)]
-#[template(path = "digest.html")]
-struct DigestHtmlTemplate<'a> {
-    posts: &'a [Post],
-    unsubscribe_url: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "digest.txt")]
-struct DigestTextTemplate<'a> {
-    posts: &'a [Post],
-    unsubscribe_url: &'a str,
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -46,7 +32,6 @@ async fn main() -> Result<(), Error> {
 async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     info!("Starting scheduled email handler...");
 
-    // Read configuration from environment variables
     let run_hour_utc: u32 = env::var("RUN_HOUR_UTC")
         .map_err(|_| Error::from("RUN_HOUR_UTC environment variable must be set"))?
         .parse()
@@ -73,16 +58,15 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
     let ses_client = aws_sdk_sesv2::Client::new(&config);
-    let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
-    let mailer = Arc::new(Mailer::new(
+    let storage = Arc::new(LambdaStorage::new(dynamodb_client, dynamodb_table));
+    let mailer = Arc::new(hndigest::mailer::SesMailer::new(
         ses_client,
         email_from,
         email_reply_to,
         ses_configuration_set,
     ));
-    let snapshotter = PostSnapshotter::new(&storage_adapter);
+    let snapshotter = PostSnapshotter::new(Arc::clone(&storage), AlgoliaPostFetcher::new());
 
-    // Step 1: Snapshot all posts
     info!("Snapshotting posts...");
     let all_posts_map = snapshotter
         .snapshot(date)
@@ -91,29 +75,22 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     let all_posts: Vec<Post> = all_posts_map.into_values().collect();
     info!(posts = all_posts.len(), "Fetched posts");
 
-    // Step 2: Build digests for all strategies in parallel
     let strategies = DigestStrategy::all();
-
     info!(
         strategies = strategies.len(),
         "Building digests for all strategies"
     );
 
-    let digests_by_strategy =
-        build_all_digests(&strategies, date, &storage_adapter, &all_posts).await?;
-
+    let digests_by_strategy = build_all_digests(&strategies, date, &storage, &all_posts).await?;
     info!(
         strategies_with_posts = digests_by_strategy.len(),
         "Built digests"
     );
 
-    // Step 3: Fetch all subscribers
-    info!("Fetching subscribers...");
-    let subscribers = storage_adapter
+    let subscribers = storage
         .get_all_subscribers()
         .await
         .map_err(|e| Error::from(e.to_string()))?;
-
     info!(subscribers = subscribers.len(), "Found subscribers");
 
     if subscribers.is_empty() {
@@ -121,7 +98,6 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
         return Ok(());
     }
 
-    // Step 4: Send emails to each subscriber (max 10 concurrent)
     let subject = {
         let base = format!("Hacker Digest for {}", date.format("%b %-d, %Y"));
         match subject_prefix {
@@ -150,34 +126,18 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
                     }
                 };
 
-                // Generate personalized unsubscribe URL
                 let unsubscribe_url = format!(
                     "{}/api/unsubscribe?token={}",
                     base_url, subscriber.unsubscribe_token
                 );
 
-                let html_content = DigestHtmlTemplate {
-                    posts,
-                    unsubscribe_url: &unsubscribe_url,
-                }
-                .render()
-                .context("Failed to render HTML template")?;
-
-                let text_content = DigestTextTemplate {
-                    posts,
-                    unsubscribe_url: &unsubscribe_url,
-                }
-                .render()
-                .context("Failed to render text template")?;
+                let html = render_digest_html(posts, &unsubscribe_url)
+                    .context("Failed to render HTML template")?;
+                let text = render_digest_text(posts, &unsubscribe_url)
+                    .context("Failed to render text template")?;
 
                 mailer
-                    .send_digest(
-                        subject,
-                        &html_content,
-                        &text_content,
-                        &subscriber.email,
-                        &unsubscribe_url,
-                    )
+                    .send_digest(subject, &html, &text, &subscriber.email, &unsubscribe_url)
                     .await
             }
         })
@@ -185,10 +145,8 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
         .collect()
         .await;
 
-    // Log results
     let success_count = send_results.iter().filter(|r| r.is_ok()).count();
     let failure_count = send_results.iter().filter(|r| r.is_err()).count();
-
     info!(
         success = success_count,
         failures = failure_count,
@@ -209,42 +167,34 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<(), Error> {
     }
 }
 
-/// Build digests for all strategies in parallel.
-/// Returns a map from strategy to the posts for that digest.
-async fn build_all_digests(
+async fn build_all_digests<S: Storage>(
     strategies: &[DigestStrategy],
     date: DateTime<Utc>,
-    storage_adapter: &Arc<StorageAdapter>,
+    storage: &Arc<S>,
     all_posts: &[Post],
 ) -> Result<HashMap<DigestStrategy, Vec<Post>>, Error> {
     let handles: Vec<_> = strategies
         .iter()
         .map(|&strategy| {
-            let storage_adapter = Arc::clone(storage_adapter);
+            let storage = Arc::clone(storage);
             let posts = all_posts.to_vec();
-
             async move {
-                let digest_builder = DigestBuilder::new(storage_adapter);
-                let digest_posts = digest_builder.build_digest(strategy, date, &posts).await?;
-
+                let digest_posts = DigestBuilder::new(storage)
+                    .build_digest(strategy, date, &posts)
+                    .await?;
                 Ok::<_, anyhow::Error>((strategy, digest_posts))
             }
         })
         .collect();
 
-    let results = futures::future::join_all(handles).await;
-
     let mut digests = HashMap::new();
-    for result in results {
+    for result in futures::future::join_all(handles).await {
         match result {
-            Ok((strategy, posts)) => {
-                if !posts.is_empty() {
-                    digests.insert(strategy, posts);
-                }
+            Ok((strategy, posts)) if !posts.is_empty() => {
+                digests.insert(strategy, posts);
             }
-            Err(e) => {
-                error!(error = %e, "Failed to build digest for strategy");
-            }
+            Ok(_) => {}
+            Err(e) => error!(error = %e, "Failed to build digest for strategy"),
         }
     }
 

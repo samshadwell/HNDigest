@@ -1,9 +1,14 @@
+use crate::types::Post;
 use anyhow::{Context, Result};
 use askama::Template;
 use aws_sdk_sesv2::Client;
 use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message, MessageHeader};
 use email_address::EmailAddress;
 use tracing::info;
+
+// ============================================================================
+// Email templates (used by default Mailer method implementations)
+// ============================================================================
 
 #[derive(Template)]
 #[template(path = "verification.html")]
@@ -33,58 +38,67 @@ struct PreferenceUpdateEmailTextTemplate<'a> {
     new_strategy_description: &'a str,
 }
 
-pub struct Mailer {
-    ses_client: Client,
-    from_address: String,
-    reply_to_address: String,
-    configuration_set_name: String,
+// ============================================================================
+// Digest email templates and render helpers
+// ============================================================================
+
+#[derive(Template)]
+#[template(path = "digest.html")]
+struct DigestHtmlTemplate<'a> {
+    posts: &'a [Post],
+    unsubscribe_url: &'a str,
 }
 
-impl Mailer {
-    pub fn new(
-        ses_client: Client,
-        from_address: String,
-        reply_to_address: String,
-        configuration_set_name: String,
-    ) -> Self {
-        Self {
-            ses_client,
-            from_address,
-            reply_to_address,
-            configuration_set_name,
-        }
-    }
+#[derive(Template)]
+#[template(path = "digest.txt")]
+struct DigestTextTemplate<'a> {
+    posts: &'a [Post],
+    unsubscribe_url: &'a str,
+}
 
-    /// Send a digest email with RFC 8058 List-Unsubscribe headers.
-    pub async fn send_digest(
+/// Render the HTML body for a digest email.
+pub fn render_digest_html(posts: &[Post], unsubscribe_url: &str) -> Result<String> {
+    DigestHtmlTemplate {
+        posts,
+        unsubscribe_url,
+    }
+    .render()
+    .context("Failed to render HTML digest template")
+}
+
+/// Render the plain-text body for a digest email.
+pub fn render_digest_text(posts: &[Post], unsubscribe_url: &str) -> Result<String> {
+    DigestTextTemplate {
+        posts,
+        unsubscribe_url,
+    }
+    .render()
+    .context("Failed to render text digest template")
+}
+
+// ============================================================================
+// Mailer trait
+// ============================================================================
+
+/// Core email-sending primitive. Implementations handle transport concerns
+/// (SES request construction, credentials, etc.).
+///
+/// Extra headers are passed as `(name, value)` string pairs so that
+/// implementations are not coupled to AWS SDK types.
+#[allow(async_fn_in_trait)]
+pub trait Mailer: Send + Sync {
+    async fn send_email(
         &self,
+        recipient: &EmailAddress,
         subject: &str,
         html_content: &str,
         text_content: &str,
-        recipient: &EmailAddress,
-        unsubscribe_url: &str,
-    ) -> Result<()> {
-        let list_unsubscribe = MessageHeader::builder()
-            .name("List-Unsubscribe")
-            .value(format!("<{}>", unsubscribe_url))
-            .build()?;
-        let list_unsubscribe_post = MessageHeader::builder()
-            .name("List-Unsubscribe-Post")
-            .value("List-Unsubscribe=One-Click")
-            .build()?;
-
-        self.send_email(
-            recipient,
-            subject,
-            html_content,
-            text_content,
-            &[list_unsubscribe, list_unsubscribe_post],
-        )
-        .await
-    }
+        extra_headers: &[(&str, &str)],
+    ) -> Result<()>;
 
     /// Send a subscription verification email.
-    pub async fn send_verification_email(
+    /// Template rendering happens here; only `send_email` is transport-coupled.
+    async fn send_verification_email(
         &self,
         recipient: &EmailAddress,
         verify_url: &str,
@@ -113,7 +127,7 @@ impl Mailer {
     }
 
     /// Send a preference update notification email.
-    pub async fn send_preference_update_email(
+    async fn send_preference_update_email(
         &self,
         recipient: &EmailAddress,
         old_strategy_description: &str,
@@ -141,13 +155,69 @@ impl Mailer {
         .await
     }
 
+    /// Send a digest email with RFC 8058 List-Unsubscribe headers.
+    ///
+    /// The caller is responsible for rendering `html_content` and `text_content`
+    /// (typically from Askama templates in the digest lambda handler).
+    async fn send_digest(
+        &self,
+        subject: &str,
+        html_content: &str,
+        text_content: &str,
+        recipient: &EmailAddress,
+        unsubscribe_url: &str,
+    ) -> Result<()> {
+        let list_unsub_value = format!("<{}>", unsubscribe_url);
+        let extra_headers: &[(&str, &str)] = &[
+            ("List-Unsubscribe", &list_unsub_value),
+            ("List-Unsubscribe-Post", "List-Unsubscribe=One-Click"),
+        ];
+        self.send_email(
+            recipient,
+            subject,
+            html_content,
+            text_content,
+            extra_headers,
+        )
+        .await
+    }
+}
+
+// ============================================================================
+// SesMailer — AWS SES v2 implementation
+// ============================================================================
+
+pub struct SesMailer {
+    ses_client: Client,
+    from_address: String,
+    reply_to_address: String,
+    configuration_set_name: String,
+}
+
+impl SesMailer {
+    pub fn new(
+        ses_client: Client,
+        from_address: String,
+        reply_to_address: String,
+        configuration_set_name: String,
+    ) -> Self {
+        Self {
+            ses_client,
+            from_address,
+            reply_to_address,
+            configuration_set_name,
+        }
+    }
+}
+
+impl Mailer for SesMailer {
     async fn send_email(
         &self,
         recipient: &EmailAddress,
         subject: &str,
         html_content: &str,
         text_content: &str,
-        extra_headers: &[MessageHeader],
+        extra_headers: &[(&str, &str)],
     ) -> Result<()> {
         let subject_content = Content::builder().data(subject).charset("UTF-8").build()?;
         let html_body = Content::builder()
@@ -162,8 +232,9 @@ impl Mailer {
         let body = Body::builder().html(html_body).text(text_body).build();
 
         let mut message_builder = Message::builder().subject(subject_content).body(body);
-        for header in extra_headers {
-            message_builder = message_builder.headers(header.clone());
+        for (name, value) in extra_headers {
+            let header = MessageHeader::builder().name(*name).value(*value).build()?;
+            message_builder = message_builder.headers(header);
         }
         let message = message_builder.build();
 
@@ -191,5 +262,57 @@ impl Mailer {
         );
 
         Ok(())
+    }
+}
+
+// ============================================================================
+// Test utilities
+// ============================================================================
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Records every `send_email` call so tests can assert on sent emails.
+    #[derive(Default)]
+    pub(crate) struct SpyMailer {
+        emails: Mutex<Vec<(String, String)>>, // (recipient, subject)
+    }
+
+    impl SpyMailer {
+        pub(crate) fn new() -> Self {
+            Self::default()
+        }
+
+        pub(crate) fn email_count(&self) -> usize {
+            self.emails.lock().unwrap().len()
+        }
+
+        pub(crate) fn sent_subjects(&self) -> Vec<String> {
+            self.emails
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(_, s)| s.clone())
+                .collect()
+        }
+    }
+
+    impl Mailer for SpyMailer {
+        async fn send_email(
+            &self,
+            recipient: &EmailAddress,
+            subject: &str,
+            _html: &str,
+            _text: &str,
+            _extra_headers: &[(&str, &str)],
+        ) -> anyhow::Result<()> {
+            self.emails
+                .lock()
+                .unwrap()
+                .push((recipient.to_string(), subject.to_string()));
+            Ok(())
+        }
     }
 }

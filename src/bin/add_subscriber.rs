@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use aws_config::BehaviorVersion;
 use email_address::EmailAddress;
-use hndigest::storage_adapter::StorageAdapter;
+use hndigest::storage::{LambdaStorage, Storage};
 use hndigest::strategies::DigestStrategy;
 use hndigest::types::Subscriber;
 use std::env;
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
     println!("Initializing DynamoDB client...");
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
-    let storage_adapter = Arc::new(StorageAdapter::new(dynamodb_client, dynamodb_table));
+    let storage_adapter = Arc::new(LambdaStorage::new(dynamodb_client, dynamodb_table));
 
     println!("Creating subscriber for {}", email);
     let subscriber = Subscriber::new(email, strategy);

@@ -210,4 +210,74 @@ mod tests {
     fn test_min_point_threshold() {
         assert_eq!(DigestStrategy::min_point_threshold(), 100);
     }
+
+    fn make_post(id: &str, points: i32) -> Post {
+        Post {
+            object_id: id.to_string(),
+            title: format!("Post {}", id),
+            url: None,
+            points,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn top_n_select_returns_at_most_n_posts() {
+        let posts: Vec<Post> = (0..20).map(|i| make_post(&i.to_string(), i)).collect();
+        let selected = DigestStrategy::TopN(5).select(&posts);
+        assert_eq!(selected.len(), 5);
+    }
+
+    #[test]
+    fn top_n_select_fewer_than_n_returns_all() {
+        let posts = vec![make_post("a", 100), make_post("b", 200)];
+        let selected = DigestStrategy::TopN(10).select(&posts);
+        assert_eq!(selected.len(), 2);
+    }
+
+    #[test]
+    fn top_n_select_preserves_input_order() {
+        // select() is a take(), so it keeps whatever order was passed in;
+        // callers are responsible for sorting beforehand.
+        let posts = vec![
+            make_post("a", 300),
+            make_post("b", 100),
+            make_post("c", 200),
+        ];
+        let selected = DigestStrategy::TopN(2).select(&posts);
+        assert_eq!(selected[0].object_id, "a");
+        assert_eq!(selected[1].object_id, "b");
+    }
+
+    #[test]
+    fn over_point_threshold_filters_below_threshold() {
+        let posts = vec![make_post("a", 500), make_post("b", 250), make_post("c", 99)];
+        let selected = DigestStrategy::OverPointThreshold(250).select(&posts);
+        assert_eq!(selected.len(), 2);
+        assert!(selected.iter().all(|p| p.points >= 250));
+    }
+
+    #[test]
+    fn over_point_threshold_includes_exact_threshold() {
+        let posts = vec![make_post("a", 100)];
+        let selected = DigestStrategy::OverPointThreshold(100).select(&posts);
+        assert_eq!(selected.len(), 1);
+    }
+
+    #[test]
+    fn over_point_threshold_empty_when_none_qualify() {
+        let posts = vec![make_post("a", 50)];
+        let selected = DigestStrategy::OverPointThreshold(100).select(&posts);
+        assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn description_is_human_readable() {
+        assert!(DigestStrategy::TopN(10).description().contains("10"));
+        assert!(
+            DigestStrategy::OverPointThreshold(500)
+                .description()
+                .contains("500")
+        );
+    }
 }

@@ -1,8 +1,9 @@
+use super::{Storage, datestamp};
 use crate::strategies::DigestStrategy;
 use crate::types::{PendingSubscription, Post, Subscriber, Token};
 use anyhow::{Context, Result};
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use email_address::EmailAddress;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -14,35 +15,38 @@ const PENDING_SUBSCRIPTION_PARTITION_KEY: &str = "PENDING_SUBSCRIPTION";
 const MODEL_TTL_DAYS: i64 = 30;
 const UNSUBSCRIBE_TOKEN_INDEX: &str = "unsubscribe_token_index";
 
-pub struct StorageAdapter {
+// ============================================================================
+// LambdaStorage — DynamoDB-backed Storage implementation
+// ============================================================================
+
+pub struct LambdaStorage {
     client: Client,
     table_name: String,
 }
 
-impl StorageAdapter {
+impl LambdaStorage {
     pub fn new(client: Client, table_name: String) -> Self {
         Self { client, table_name }
     }
+}
 
-    pub async fn snapshot_posts(
+impl Storage for LambdaStorage {
+    async fn snapshot_posts(
         &self,
         posts: &HashMap<String, Post>,
         date: DateTime<Utc>,
     ) -> Result<()> {
-        let datestamp = datestamp(date);
-        let posts_av = to_dynamo_map(posts)?;
-
         let item = HashMap::from([
             (
                 "PK".to_string(),
                 AttributeValue::S(SNAPSHOT_PARTITION_KEY.to_string()),
             ),
-            ("SK".to_string(), AttributeValue::S(datestamp)),
-            ("posts".to_string(), posts_av),
+            ("SK".to_string(), AttributeValue::S(datestamp(date))),
+            ("posts".to_string(), to_dynamo_map(posts)?),
             (
                 "expires_at".to_string(),
                 AttributeValue::N(
-                    ((date + Duration::days(MODEL_TTL_DAYS)).timestamp()).to_string(),
+                    ((date + chrono::Duration::days(MODEL_TTL_DAYS)).timestamp()).to_string(),
                 ),
             ),
         ]);
@@ -58,27 +62,15 @@ impl StorageAdapter {
         Ok(())
     }
 
-    pub async fn save_digest(
-        &self,
-        type_: &str,
-        date: DateTime<Utc>,
-        posts: &[Post],
-    ) -> Result<()> {
-        let datestamp = datestamp(date);
-
-        let posts_av = to_dynamo_list(posts)?;
-
+    async fn save_digest(&self, type_: &str, date: DateTime<Utc>, posts: &[Post]) -> Result<()> {
         let item = HashMap::from([
-            (
-                "PK".to_string(),
-                AttributeValue::S(digest_partition_key(type_)),
-            ),
-            ("SK".to_string(), AttributeValue::S(datestamp)),
-            ("posts".to_string(), posts_av),
+            ("PK".to_string(), AttributeValue::S(digest_pk(type_))),
+            ("SK".to_string(), AttributeValue::S(datestamp(date))),
+            ("posts".to_string(), to_dynamo_list(posts)?),
             (
                 "expires_at".to_string(),
                 AttributeValue::N(
-                    ((date + Duration::days(MODEL_TTL_DAYS)).timestamp()).to_string(),
+                    ((date + chrono::Duration::days(MODEL_TTL_DAYS)).timestamp()).to_string(),
                 ),
             ),
         ]);
@@ -94,19 +86,13 @@ impl StorageAdapter {
         Ok(())
     }
 
-    pub async fn fetch_digest(
-        &self,
-        type_: &str,
-        date: DateTime<Utc>,
-    ) -> Result<Option<Vec<Post>>> {
-        let datestamp = datestamp(date);
-
+    async fn fetch_digest(&self, type_: &str, date: DateTime<Utc>) -> Result<Option<Vec<Post>>> {
         let output = self
             .client
             .get_item()
             .table_name(&self.table_name)
-            .key("PK", AttributeValue::S(digest_partition_key(type_)))
-            .key("SK", AttributeValue::S(datestamp))
+            .key("PK", AttributeValue::S(digest_pk(type_)))
+            .key("SK", AttributeValue::S(datestamp(date)))
             .send()
             .await
             .context("Failed to fetch digest")?;
@@ -114,14 +100,11 @@ impl StorageAdapter {
         output
             .item
             .and_then(|item| item.get("posts").cloned())
-            .map(|posts_av| from_dynamo_list(&posts_av))
+            .map(|av| from_dynamo_list(&av))
             .transpose()
     }
 
-    /// Get a subscriber by their unsubscribe token.
-    /// Returns None if no subscriber exists with this token.
-    /// Fails if multiple subscribers have the same token (should never happen).
-    pub async fn get_subscriber_by_unsubscribe_token(
+    async fn get_subscriber_by_unsubscribe_token(
         &self,
         token: &Token,
     ) -> Result<Option<Subscriber>> {
@@ -137,7 +120,6 @@ impl StorageAdapter {
             .context("Failed to query subscriber by token")?;
 
         let items = output.items.unwrap_or_default();
-
         match items.len() {
             0 => Ok(None),
             1 => items
@@ -146,20 +128,19 @@ impl StorageAdapter {
                 .map(subscriber_from_item)
                 .transpose(),
             n => anyhow::bail!(
-                "Data integrity error: found {} subscribers with token '{}'. Tokens must be unique.",
+                "Data integrity error: {} subscribers share token '{}'; tokens must be unique.",
                 n,
                 token
             ),
         }
     }
 
-    /// Get all subscribers (scans the table for SUBSCRIBER records).
-    pub async fn get_all_subscribers(&self) -> Result<Vec<Subscriber>> {
+    async fn get_all_subscribers(&self) -> Result<Vec<Subscriber>> {
         let mut subscribers = Vec::new();
         let mut exclusive_start_key = None;
 
         loop {
-            let mut request = self
+            let mut req = self
                 .client
                 .query()
                 .table_name(&self.table_name)
@@ -170,13 +151,10 @@ impl StorageAdapter {
                 );
 
             if let Some(start_key) = exclusive_start_key {
-                request = request.set_exclusive_start_key(Some(start_key));
+                req = req.set_exclusive_start_key(Some(start_key));
             }
 
-            let output = request
-                .send()
-                .await
-                .context("Failed to query subscribers")?;
+            let output = req.send().await.context("Failed to query subscribers")?;
 
             if let Some(items) = output.items {
                 for item in items {
@@ -193,8 +171,7 @@ impl StorageAdapter {
         Ok(subscribers)
     }
 
-    /// Create or update a subscriber record.
-    pub async fn upsert_subscriber(&self, subscriber: &Subscriber) -> Result<()> {
+    async fn upsert_subscriber(&self, subscriber: &Subscriber) -> Result<()> {
         let email_str = subscriber.email.to_string().to_lowercase();
         let item = HashMap::from([
             (
@@ -223,13 +200,12 @@ impl StorageAdapter {
             .set_item(Some(item))
             .send()
             .await
-            .context("Failed to set subscriber")?;
+            .context("Failed to upsert subscriber")?;
 
         Ok(())
     }
 
-    /// Remove a subscriber by email address.
-    pub async fn remove_subscriber(&self, email: &EmailAddress) -> Result<()> {
+    async fn remove_subscriber(&self, email: &EmailAddress) -> Result<()> {
         self.client
             .delete_item()
             .table_name(&self.table_name)
@@ -245,17 +221,10 @@ impl StorageAdapter {
         Ok(())
     }
 
-    /// Create or update a pending subscription record.
-    ///
-    /// Uses email as the sort key, so repeated submissions for the same email
-    /// will overwrite the previous pending subscription (natural upsert).
-    ///
-    /// NOTE: This relies on DynamoDB TTL being configured on the `expires_at`
-    /// attribute for automatic cleanup of expired pending subscriptions.
-    pub async fn upsert_pending_subscription(&self, pending: &PendingSubscription) -> Result<()> {
+    async fn upsert_pending_subscription(&self, pending: &PendingSubscription) -> Result<()> {
         let email_str = pending.email.to_string().to_lowercase();
-        // Note: expires_at is stored as epoch seconds (N) for DynamoDB TTL,
-        // while created_at is stored as RFC3339 string for human readability.
+        // expires_at stored as epoch seconds (N) for DynamoDB TTL;
+        // created_at stored as RFC3339 string for human readability.
         let item = HashMap::from([
             (
                 "PK".to_string(),
@@ -292,8 +261,7 @@ impl StorageAdapter {
         Ok(())
     }
 
-    /// Get a pending subscription by email.
-    pub async fn get_pending_subscription(
+    async fn get_pending_subscription(
         &self,
         email: &EmailAddress,
     ) -> Result<Option<PendingSubscription>> {
@@ -313,12 +281,7 @@ impl StorageAdapter {
         output.item.map(pending_subscription_from_item).transpose()
     }
 
-    /// Get a subscriber by email address.
-    /// Returns None if no subscriber exists with this email.
-    pub async fn get_subscriber_by_email(
-        &self,
-        email: &EmailAddress,
-    ) -> Result<Option<Subscriber>> {
+    async fn get_subscriber_by_email(&self, email: &EmailAddress) -> Result<Option<Subscriber>> {
         let output = self
             .client
             .get_item()
@@ -336,31 +299,26 @@ impl StorageAdapter {
     }
 }
 
-fn datestamp(date: DateTime<Utc>) -> String {
-    date.format("%F").to_string()
-}
+// ============================================================================
+// Serialization helpers
+// ============================================================================
 
-fn digest_partition_key(type_: &str) -> String {
+fn digest_pk(type_: &str) -> String {
     format!("{}#{}", DIGEST_PARTITION_KEY_PREFIX, type_)
 }
 
-// Helpers for DynamoDB serde
 fn to_dynamo_map(posts: &HashMap<String, Post>) -> Result<AttributeValue> {
-    let json = serde_json::to_value(posts)?;
-    json_to_av(&json)
+    json_to_av(&serde_json::to_value(posts)?)
 }
 
 fn to_dynamo_list(posts: &[Post]) -> Result<AttributeValue> {
-    let json = serde_json::to_value(posts)?;
-    json_to_av(&json)
+    json_to_av(&serde_json::to_value(posts)?)
 }
 
 fn from_dynamo_list(av: &AttributeValue) -> Result<Vec<Post>> {
-    let json = av_to_json(av)?;
-    Ok(serde_json::from_value(json)?)
+    Ok(serde_json::from_value(av_to_json(av)?)?)
 }
 
-/// Convert a JSON value to a DynamoDB AttributeValue.
 fn json_to_av(json: &serde_json::Value) -> Result<AttributeValue> {
     Ok(match json {
         serde_json::Value::Null => AttributeValue::Null(true),
@@ -378,7 +336,6 @@ fn json_to_av(json: &serde_json::Value) -> Result<AttributeValue> {
     })
 }
 
-/// Convert a DynamoDB AttributeValue back to JSON.
 fn av_to_json(av: &AttributeValue) -> Result<serde_json::Value> {
     Ok(match av {
         AttributeValue::Null(_) => serde_json::Value::Null,
@@ -397,17 +354,16 @@ fn av_to_json(av: &AttributeValue) -> Result<serde_json::Value> {
                 .map(|(k, v)| av_to_json(v).map(|json| (k.clone(), json)))
                 .collect::<Result<_>>()?,
         ),
-        _ => serde_json::Value::Null, // Ignore binary/set types
+        _ => serde_json::Value::Null, // Ignore binary/set types (non-exhaustive enum)
     })
 }
 
-/// Convert a DynamoDB item to a Subscriber struct.
-fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscriber> {
+pub(crate) fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscriber> {
     let email_str = item
         .get("email")
         .and_then(|v| v.as_s().ok())
         .ok_or_else(|| anyhow::anyhow!("Missing email field"))?;
-    let email = EmailAddress::from_str(email_str).context("Invalid email address in database")?;
+    let email = EmailAddress::from_str(email_str).context("Invalid email in database")?;
 
     let strategy_str = item
         .get("strategy")
@@ -437,8 +393,7 @@ fn subscriber_from_item(item: HashMap<String, AttributeValue>) -> Result<Subscri
     })
 }
 
-/// Convert a DynamoDB item to a PendingSubscription struct.
-fn pending_subscription_from_item(
+pub(crate) fn pending_subscription_from_item(
     item: HashMap<String, AttributeValue>,
 ) -> Result<PendingSubscription> {
     let token = item
@@ -452,7 +407,7 @@ fn pending_subscription_from_item(
         .get("email")
         .and_then(|v| v.as_s().ok())
         .ok_or_else(|| anyhow::anyhow!("Missing email field"))?;
-    let email = EmailAddress::from_str(email_str).context("Invalid email address in database")?;
+    let email = EmailAddress::from_str(email_str).context("Invalid email in database")?;
 
     let strategy_str = item
         .get("strategy")
@@ -483,4 +438,139 @@ fn pending_subscription_from_item(
         created_at,
         expires_at,
     })
+}
+
+// ============================================================================
+// Tests — DynamoDB serialization helpers (no network required)
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::strategies::DigestStrategy;
+    use chrono::TimeZone;
+
+    fn make_subscriber_item(
+        email: &str,
+        strategy: &str,
+        subscribed_at: &str,
+        token: &str,
+    ) -> HashMap<String, AttributeValue> {
+        HashMap::from([
+            ("email".to_string(), AttributeValue::S(email.to_string())),
+            (
+                "strategy".to_string(),
+                AttributeValue::S(strategy.to_string()),
+            ),
+            (
+                "subscribed_at".to_string(),
+                AttributeValue::S(subscribed_at.to_string()),
+            ),
+            (
+                "unsubscribe_token".to_string(),
+                AttributeValue::S(token.to_string()),
+            ),
+        ])
+    }
+
+    #[test]
+    fn subscriber_from_item_valid() {
+        let item = make_subscriber_item(
+            "test@example.com",
+            "TOP_N#10",
+            "2024-01-01T00:00:00+00:00",
+            "some-token",
+        );
+        let sub = subscriber_from_item(item).unwrap();
+        assert_eq!(sub.email.to_string(), "test@example.com");
+        assert_eq!(sub.strategy, DigestStrategy::TopN(10));
+        assert_eq!(sub.unsubscribe_token.to_string(), "some-token");
+    }
+
+    #[test]
+    fn subscriber_from_item_missing_email() {
+        let item = HashMap::from([
+            (
+                "strategy".to_string(),
+                AttributeValue::S("TOP_N#10".to_string()),
+            ),
+            (
+                "subscribed_at".to_string(),
+                AttributeValue::S("2024-01-01T00:00:00+00:00".to_string()),
+            ),
+            (
+                "unsubscribe_token".to_string(),
+                AttributeValue::S("token".to_string()),
+            ),
+        ]);
+        assert!(subscriber_from_item(item).is_err());
+    }
+
+    #[test]
+    fn subscriber_from_item_invalid_strategy() {
+        let item = make_subscriber_item(
+            "test@example.com",
+            "INVALID_STRATEGY",
+            "2024-01-01T00:00:00+00:00",
+            "token",
+        );
+        assert!(subscriber_from_item(item).is_err());
+    }
+
+    #[test]
+    fn pending_subscription_from_item_valid() {
+        let expires_ts = Utc
+            .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
+            .unwrap()
+            .timestamp();
+        let item = HashMap::from([
+            (
+                "token".to_string(),
+                AttributeValue::S("abc-token".to_string()),
+            ),
+            (
+                "email".to_string(),
+                AttributeValue::S("pending@example.com".to_string()),
+            ),
+            (
+                "strategy".to_string(),
+                AttributeValue::S("POINT_THRESHOLD#100".to_string()),
+            ),
+            (
+                "created_at".to_string(),
+                AttributeValue::S("2024-01-01T00:00:00+00:00".to_string()),
+            ),
+            (
+                "expires_at".to_string(),
+                AttributeValue::N(expires_ts.to_string()),
+            ),
+        ]);
+        let pending = pending_subscription_from_item(item).unwrap();
+        assert_eq!(pending.email.to_string(), "pending@example.com");
+        assert_eq!(pending.strategy, DigestStrategy::OverPointThreshold(100));
+        assert_eq!(pending.token.to_string(), "abc-token");
+    }
+
+    #[test]
+    fn pending_subscription_from_item_missing_token() {
+        let item = HashMap::from([
+            (
+                "email".to_string(),
+                AttributeValue::S("pending@example.com".to_string()),
+            ),
+            (
+                "strategy".to_string(),
+                AttributeValue::S("TOP_N#10".to_string()),
+            ),
+            (
+                "created_at".to_string(),
+                AttributeValue::S("2024-01-01T00:00:00+00:00".to_string()),
+            ),
+            (
+                "expires_at".to_string(),
+                AttributeValue::N("9999999999".to_string()),
+            ),
+        ]);
+        assert!(pending_subscription_from_item(item).is_err());
+    }
 }

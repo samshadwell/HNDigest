@@ -1,24 +1,22 @@
 use crate::post_fetcher::PostFetcher;
-use crate::storage_adapter::StorageAdapter;
+use crate::storage::Storage;
 use crate::strategies::DigestStrategy;
 use crate::types::Post;
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 const LOOKBACK_DAYS: i64 = 2;
 
-pub struct PostSnapshotter<'a> {
-    storage: &'a StorageAdapter,
-    fetcher: PostFetcher,
+pub struct PostSnapshotter<S, F> {
+    storage: Arc<S>,
+    fetcher: F,
 }
 
-impl<'a> PostSnapshotter<'a> {
-    pub fn new(storage: &'a StorageAdapter) -> Self {
-        Self {
-            storage,
-            fetcher: PostFetcher::new(),
-        }
+impl<S: Storage, F: PostFetcher> PostSnapshotter<S, F> {
+    pub fn new(storage: Arc<S>, fetcher: F) -> Self {
+        Self { storage, fetcher }
     }
 
     pub async fn snapshot(&self, date: DateTime<Utc>) -> Result<HashMap<String, Post>> {

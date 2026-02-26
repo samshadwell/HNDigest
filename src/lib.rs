@@ -1,8 +1,11 @@
+pub mod api;
+pub mod bounce;
+pub mod captcha;
 pub mod digest_builder;
 pub mod mailer;
 pub mod post_fetcher;
 pub mod post_snapshotter;
-pub mod storage_adapter;
+pub mod storage;
 pub mod strategies;
 pub mod subscribe;
 pub mod types;
