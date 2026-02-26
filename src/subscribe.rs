@@ -80,7 +80,7 @@ pub async fn verify_subscription<S: Storage>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::test_utils::FakeStorage;
+    use crate::storage::test_utils::InMemoryStorage;
     use crate::strategies::DigestStrategy;
     use crate::types::{PendingSubscription, Subscriber, Token};
     use email_address::EmailAddress;
@@ -92,7 +92,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_pending_stores_record() {
-        let storage = Arc::new(FakeStorage::new());
+        let storage = Arc::new(InMemoryStorage::new());
         let strategy = DigestStrategy::TopN(10);
         let email = email("new@example.com");
 
@@ -117,7 +117,7 @@ mod tests {
         let pending =
             PendingSubscription::new(email("verify@example.com"), DigestStrategy::TopN(20));
         let token = pending.token.clone();
-        let storage = Arc::new(FakeStorage::new().with_pending(pending));
+        let storage = Arc::new(InMemoryStorage::new().with_pending(pending));
 
         let result = verify_subscription(&storage, &email("verify@example.com"), &token)
             .await
@@ -140,7 +140,7 @@ mod tests {
     async fn verify_subscription_wrong_token_returns_none() {
         let pending =
             PendingSubscription::new(email("verify@example.com"), DigestStrategy::TopN(10));
-        let storage = Arc::new(FakeStorage::new().with_pending(pending));
+        let storage = Arc::new(InMemoryStorage::new().with_pending(pending));
         let wrong_token: Token = "wrong-token".parse().unwrap();
 
         let result = verify_subscription(&storage, &email("verify@example.com"), &wrong_token)
@@ -158,7 +158,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_subscription_no_pending_returns_none() {
-        let storage = Arc::new(FakeStorage::new());
+        let storage = Arc::new(InMemoryStorage::new());
         let token: Token = "some-token".parse().unwrap();
 
         let result = verify_subscription(&storage, &email("nobody@example.com"), &token)
@@ -171,7 +171,7 @@ mod tests {
     #[tokio::test]
     async fn update_strategy_persists_new_and_returns_old() {
         let sub = Subscriber::new(email("sub@example.com"), DigestStrategy::TopN(10));
-        let storage = Arc::new(FakeStorage::new().with_subscriber(sub));
+        let storage = Arc::new(InMemoryStorage::new().with_subscriber(sub));
 
         let old = update_subscription_strategy(
             &storage,

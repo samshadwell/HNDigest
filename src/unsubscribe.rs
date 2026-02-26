@@ -21,7 +21,7 @@ pub async fn remove_subscriber<S: Storage>(storage: &Arc<S>, token: &Token) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::test_utils::FakeStorage;
+    use crate::storage::test_utils::InMemoryStorage;
     use crate::strategies::DigestStrategy;
     use crate::types::Subscriber;
     use email_address::EmailAddress;
@@ -35,7 +35,7 @@ mod tests {
     async fn remove_subscriber_found_removes_and_returns_true() {
         let sub = Subscriber::new(email("unsub@example.com"), DigestStrategy::TopN(10));
         let token = sub.unsubscribe_token.clone();
-        let storage = Arc::new(FakeStorage::new().with_subscriber(sub));
+        let storage = Arc::new(InMemoryStorage::new().with_subscriber(sub));
 
         let result = remove_subscriber(&storage, &token).await.unwrap();
 
@@ -51,7 +51,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_subscriber_not_found_returns_false() {
-        let storage = Arc::new(FakeStorage::new());
+        let storage = Arc::new(InMemoryStorage::new());
         let token: Token = "unknown-token".parse().unwrap();
 
         let result = remove_subscriber(&storage, &token).await.unwrap();
@@ -65,7 +65,7 @@ mod tests {
         let sub2 = Subscriber::new(email("remove@example.com"), DigestStrategy::TopN(10));
         let token = sub2.unsubscribe_token.clone();
         let storage = Arc::new(
-            FakeStorage::new()
+            InMemoryStorage::new()
                 .with_subscriber(sub1)
                 .with_subscriber(sub2),
         );

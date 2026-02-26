@@ -1,3 +1,6 @@
+pub mod api;
+pub mod bounce;
+pub mod captcha;
 pub mod digest_builder;
 pub mod mailer;
 pub mod post_fetcher;

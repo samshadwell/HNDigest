@@ -1,3 +1,4 @@
+use crate::types::Post;
 use anyhow::{Context, Result};
 use askama::Template;
 use aws_sdk_sesv2::Client;
@@ -35,6 +36,44 @@ struct PreferenceUpdateEmailHtmlTemplate<'a> {
 struct PreferenceUpdateEmailTextTemplate<'a> {
     old_strategy_description: &'a str,
     new_strategy_description: &'a str,
+}
+
+// ============================================================================
+// Digest email templates and render helpers
+// ============================================================================
+
+#[derive(Template)]
+#[template(path = "digest.html")]
+struct DigestHtmlTemplate<'a> {
+    posts: &'a [Post],
+    unsubscribe_url: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "digest.txt")]
+struct DigestTextTemplate<'a> {
+    posts: &'a [Post],
+    unsubscribe_url: &'a str,
+}
+
+/// Render the HTML body for a digest email.
+pub fn render_digest_html(posts: &[Post], unsubscribe_url: &str) -> Result<String> {
+    DigestHtmlTemplate {
+        posts,
+        unsubscribe_url,
+    }
+    .render()
+    .context("Failed to render HTML digest template")
+}
+
+/// Render the plain-text body for a digest email.
+pub fn render_digest_text(posts: &[Post], unsubscribe_url: &str) -> Result<String> {
+    DigestTextTemplate {
+        posts,
+        unsubscribe_url,
+    }
+    .render()
+    .context("Failed to render text digest template")
 }
 
 // ============================================================================
@@ -223,5 +262,57 @@ impl Mailer for SesMailer {
         );
 
         Ok(())
+    }
+}
+
+// ============================================================================
+// Test utilities
+// ============================================================================
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Records every `send_email` call so tests can assert on sent emails.
+    #[derive(Default)]
+    pub(crate) struct SpyMailer {
+        emails: Mutex<Vec<(String, String)>>, // (recipient, subject)
+    }
+
+    impl SpyMailer {
+        pub(crate) fn new() -> Self {
+            Self::default()
+        }
+
+        pub(crate) fn email_count(&self) -> usize {
+            self.emails.lock().unwrap().len()
+        }
+
+        pub(crate) fn sent_subjects(&self) -> Vec<String> {
+            self.emails
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(_, s)| s.clone())
+                .collect()
+        }
+    }
+
+    impl Mailer for SpyMailer {
+        async fn send_email(
+            &self,
+            recipient: &EmailAddress,
+            subject: &str,
+            _html: &str,
+            _text: &str,
+            _extra_headers: &[(&str, &str)],
+        ) -> anyhow::Result<()> {
+            self.emails
+                .lock()
+                .unwrap()
+                .push((recipient.to_string(), subject.to_string()));
+            Ok(())
+        }
     }
 }

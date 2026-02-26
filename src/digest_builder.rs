@@ -58,7 +58,7 @@ pub(crate) fn filter_sent_posts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::test_utils::FakeStorage;
+    use crate::storage::test_utils::InMemoryStorage;
     use crate::strategies::DigestStrategy;
     use crate::types::Post;
     use chrono::Utc;
@@ -123,7 +123,7 @@ mod tests {
         let strategy = DigestStrategy::TopN(2);
 
         // Post "a" was already sent yesterday
-        let storage = Arc::new(FakeStorage::new().with_digest(
+        let storage = Arc::new(InMemoryStorage::new().with_digest(
             &strategy.to_string(),
             yesterday,
             vec![make_post("a", 500)],
@@ -155,7 +155,7 @@ mod tests {
     async fn build_digest_over_point_threshold_filters_correctly() {
         let date = Utc::now();
         let strategy = DigestStrategy::OverPointThreshold(200);
-        let storage = Arc::new(FakeStorage::new());
+        let storage = Arc::new(InMemoryStorage::new());
         let builder = DigestBuilder::new(Arc::clone(&storage));
 
         let posts = vec![
@@ -174,7 +174,7 @@ mod tests {
     async fn build_digest_no_yesterday_digest_uses_all_posts() {
         let date = Utc::now();
         let strategy = DigestStrategy::TopN(10);
-        let storage = Arc::new(FakeStorage::new()); // no pre-seeded digest
+        let storage = Arc::new(InMemoryStorage::new()); // no pre-seeded digest
         let builder = DigestBuilder::new(Arc::clone(&storage));
 
         let posts = vec![make_post("a", 500), make_post("b", 200)];
