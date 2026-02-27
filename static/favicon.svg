@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" viewBox="0 -0.5 32 32">
+  <style>
+    .primary { stroke: lab(42 39 52); }
+    .bg      { stroke: lab(96 0 13); }
+    @media (prefers-color-scheme: dark) {
+      .primary { stroke: lab(64 37 50); }
+      .bg      { stroke: lab(15 0 0); }
+    }
+  </style>
+  <path class="primary" d="M2 0h25M2 1h26M0 2h2m23 0h4M0 3h2m23 0h5M0 4h2m23 0h6M0 5h2m23 0h7M0 6h2m24 0h6M0 7h2m28 0h2M0 8h2m5 0h6m9 0h3m5 0h2M0 9h2m5 0h6m9 0h3m5 0h2M0 10h2m5 0h6m9 0h3m5 0h2M0 11h2m2 0h3m6 0h3m3 0h6m5 0h2M0 12h2m2 0h3m6 0h3m3 0h6m5 0h2M0 13h2m2 0h3m6 0h3m3 0h6m5 0h2M0 14h2m2 0h3m6 0h3m6 0h3m5 0h2M0 15h2m2 0h3m6 0h3m6 0h3m5 0h2M0 16h2m2 0h3m6 0h3m6 0h3m5 0h2M0 17h2m2 0h3m6 0h3m6 0h3m5 0h2M0 18h2m2 0h3m6 0h3m6 0h3m5 0h2M0 19h2m2 0h3m6 0h3m6 0h3m5 0h2M0 20h2m2 0h3m6 0h3m6 0h3m5 0h2M0 21h2m2 0h3m6 0h3m6 0h3m5 0h2M0 22h2m2 0h3m6 0h3m6 0h3m5 0h2M0 23h2m5 0h6m6 0h9m2 0h2M0 24h2m5 0h6m6 0h9m2 0h2M0 25h2m5 0h6m6 0h9m2 0h2M0 26h2m28 0h2M0 27h2m28 0h2M0 28h2m28 0h2M0 29h2m28 0h2M2 30h28M2 31h28"/>
+  <path class="bg" d="M2 2h23M2 3h23M2 4h23M2 5h23M2 6h24M2 7h28M2 8h5m6 0h9m3 0h5M2 9h5m6 0h9m3 0h5M2 10h5m6 0h9m3 0h5M2 11h2m3 0h6m3 0h3m6 0h5M2 12h2m3 0h6m3 0h3m6 0h5M2 13h2m3 0h6m3 0h3m6 0h5M2 14h2m3 0h6m3 0h6m3 0h5M2 15h2m3 0h6m3 0h6m3 0h5M2 16h2m3 0h6m3 0h6m3 0h5M2 17h2m3 0h6m3 0h6m3 0h5M2 18h2m3 0h6m3 0h6m3 0h5M2 19h2m3 0h6m3 0h6m3 0h5M2 20h2m3 0h6m3 0h6m3 0h5M2 21h2m3 0h6m3 0h6m3 0h5M2 22h2m3 0h6m3 0h6m3 0h5M2 23h5m6 0h6m9 0h2M2 24h5m6 0h6m9 0h2M2 25h5m6 0h6m9 0h2M2 26h28M2 27h28M2 28h28M2 29h28"/>
+</svg>
