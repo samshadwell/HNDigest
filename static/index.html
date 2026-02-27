@@ -2,13 +2,14 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Hacker Digest - Daily Hacker News email digest</title>
         <meta
             name="description"
             content="The top posts on Hacker News, delivered to your email inbox every day."
         />
-        <link rel="icon" href="data:," />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
@@ -88,13 +89,48 @@
             .cf-turnstile {
                 margin-top: 20px;
             }
+
+            .hero-title {
+                display: flex;
+                align-items: flex-end;
+                gap: 16px;
+            }
+
+            .site-logo {
+                display: none;
+            }
+
+            @media (min-width: 520px) {
+                .site-logo {
+                    display: block;
+                    width: 48px;
+                    height: 48px;
+                    color: var(--primary);
+                    flex-shrink: 0;
+                    margin-bottom: 10px;
+                }
+            }
         </style>
     </head>
 
     <body>
         <main>
             <div class="hero">
-                <h1>Hacker Digest</h1>
+                <div class="hero-title">
+                    <svg
+                        class="site-logo"
+                        xmlns="http://www.w3.org/2000/svg"
+                        shape-rendering="crispEdges"
+                        viewBox="0 -0.5 26 26"
+                        aria-hidden="true"
+                    >
+                        <path
+                            stroke="currentColor"
+                            d="M0 0h22M0 1h1m20 0h1M0 2h1m20 0h3M0 3h1m2 0h2m3 0h1m3 0h2m3 0h1m3 0h1m1 0h1M0 4h1m1 0h1m2 0h1m1 0h2m2 0h1m2 0h1m1 0h2m3 0h1m1 0h3M0 5h1m1 0h1m2 0h1m2 0h1m2 0h1m2 0h1m2 0h1m3 0h1m1 0h1m1 0h1M0 6h1m1 0h1m2 0h1m2 0h1m2 0h1m2 0h1m2 0h1m3 0h1m1 0h1m1 0h1M0 7h1m2 0h2m2 0h3m2 0h2m2 0h3m2 0h1m1 0h1m1 0h1M0 8h1m20 0h1m1 0h1m1 0h1M0 9h1m20 0h1m1 0h1m1 0h1M0 10h1m2 0h1m3 0h2m3 0h1m3 0h2m3 0h1m1 0h1m1 0h1M0 11h1m1 0h2m2 0h1m2 0h1m1 0h2m2 0h1m2 0h1m2 0h1m1 0h1m1 0h1M0 12h1m2 0h1m2 0h1m2 0h1m2 0h1m2 0h1m2 0h1m2 0h1m1 0h1m1 0h1M0 13h1m2 0h1m2 0h1m2 0h1m2 0h1m2 0h1m2 0h1m2 0h1m1 0h1m1 0h1M0 14h1m1 0h3m2 0h2m2 0h3m2 0h2m3 0h1m1 0h1m1 0h1M0 15h1m20 0h1m1 0h1m1 0h1M0 16h1m20 0h1m1 0h1m1 0h1M0 17h1m1 0h6m1 0h1m2 0h3m1 0h3m2 0h1m1 0h1m1 0h1M0 18h1m20 0h1m1 0h1m1 0h1M0 19h1m1 0h2m2 0h4m2 0h7m2 0h1m1 0h1m1 0h1M0 20h1m20 0h1m1 0h1m1 0h1M0 21h1m1 0h5m1 0h2m2 0h2m1 0h2m1 0h1m2 0h1m1 0h1m1 0h1M0 22h1m20 0h1m1 0h1m1 0h1M0 23h1m1 0h8m2 0h5m4 0h2m2 0h1M0 24h1m23 0h1M1 25h23"
+                        />
+                    </svg>
+                    <h1>Hacker Digest</h1>
+                </div>
                 <p>
                     The top posts on
                     <a href="https://news.ycombinator.com">Hacker News</a>,
