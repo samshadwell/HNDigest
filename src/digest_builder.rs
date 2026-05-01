@@ -26,7 +26,7 @@ impl<S: Storage> DigestBuilder<S> {
         let yesterday_digest = self.storage.fetch_digest(&strategy_name, yesterday).await?;
 
         let mut unsent_posts = filter_sent_posts(posts, yesterday_digest.as_deref());
-        unsent_posts.sort_by(|a, b| b.points.cmp(&a.points));
+        unsent_posts.sort_by_key(|b| std::cmp::Reverse(b.points));
 
         let selected_posts = strategy.select(&unsent_posts);
 
