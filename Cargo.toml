@@ -26,14 +26,14 @@ path = "src/bin/bounce_handler.rs"
 anyhow = "1.0"
 email_address = "0.2"
 askama = "0.16"
-aws_lambda_events = { version = "1.0.3", default-features = false, features = ["sns"] }
-aws-config = { version = "1.8.14", features = ["rustls"] }
-aws-sdk-dynamodb = "1.107.0"
-aws-sdk-sesv2 = "1.114.0"
-aws-sdk-ssm = "1.106.0"
+aws_lambda_events = { version = "1.1.3", default-features = false, features = ["sns"] }
+aws-config = { version = "1.8.16", features = ["rustls"] }
+aws-sdk-dynamodb = "1.111.0"
+aws-sdk-sesv2 = "1.118.0"
+aws-sdk-ssm = "1.109.0"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
-lambda_http = "1.0.2"
+lambda_http = "1.1.3"
 lambda_runtime = "1.0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
