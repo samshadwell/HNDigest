@@ -64,22 +64,51 @@ resource "aws_cloudwatch_metric_alarm" "subscription_verified" {
 }
 
 ###
-# Alarm 3: Digest not invoked (dead man's switch)
+# Alarm 3: Digest not successful (dead man's switch)
 ###
 resource "aws_cloudwatch_metric_alarm" "digest_not_invoked" {
   alarm_name          = "${lower(var.project_name)}-digest-not-invoked"
-  alarm_description   = "Digest Lambda has not been invoked in 24 hours"
+  alarm_description   = "Digest Lambda has not completed a successful invocation in 25 hours"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 1
-  metric_name         = "Invocations"
-  namespace           = "AWS/Lambda"
-  period              = 90000 # 25 hours (in case scheduling drifts)
-  statistic           = "Sum"
   threshold           = 1
   treat_missing_data  = "breaching"
 
-  dimensions = {
-    FunctionName = var.digest_function_name
+  metric_query {
+    id          = "successful"
+    expression  = "invocations - FILL(errors, 0)"
+    label       = "Successful Invocations"
+    return_data = true
+  }
+
+  metric_query {
+    id = "invocations"
+
+    metric {
+      metric_name = "Invocations"
+      namespace   = "AWS/Lambda"
+      period      = 90000 # 25 hours (in case scheduling drifts)
+      stat        = "Sum"
+
+      dimensions = {
+        FunctionName = var.digest_function_name
+      }
+    }
+  }
+
+  metric_query {
+    id = "errors"
+
+    metric {
+      metric_name = "Errors"
+      namespace   = "AWS/Lambda"
+      period      = 90000
+      stat        = "Sum"
+
+      dimensions = {
+        FunctionName = var.digest_function_name
+      }
+    }
   }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
