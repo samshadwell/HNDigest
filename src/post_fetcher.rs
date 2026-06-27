@@ -1,6 +1,6 @@
 use crate::types::Post;
 use anyhow::Result;
-use reqwest::Client;
+use reqwest::{Client, RequestBuilder};
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -64,24 +64,35 @@ impl PostFetcher for AlgoliaPostFetcher {
 
 impl AlgoliaPostFetcher {
     async fn fetch_top_k(&self, top_k: usize, since: i64) -> Result<HashMap<String, Post>> {
-        let url = format!(
-            "{}{}?hitsPerPage={}&tags=story&numericFilters=created_at_i>={}",
-            HOST, PATH, top_k, since
-        );
-        self.fetch_posts_from_url(&url).await
+        let req = self.client.get(format!("{}{}", HOST, PATH)).query(&[
+            ("hitsPerPage", top_k.to_string()),
+            ("tags", "story".to_string()),
+            ("filters", format!("created_at_i >= {}", since)),
+        ]);
+
+        self.fetch_posts(req).await
     }
 
     async fn fetch_by_points(&self, points: i32, since: i64) -> Result<HashMap<String, Post>> {
-        let url = format!(
-            "{}{}?hitsPerPage=10000&tags=story&numericFilters=created_at_i>={},points>={}",
-            HOST, PATH, since, points
-        );
-        self.fetch_posts_from_url(&url).await
+        // Ordering is by points. Around June 2026 this API stopped filtering by points server-side,
+        // so we need to do it client-side. Making a simplifying assumption that there won't be
+        // more than 1 page of results (1000 posts) with at least 'points' points
+        let req = self.client.get(format!("{}{}", HOST, PATH)).query(&[
+            ("hitsPerPage", "1000".to_string()),
+            ("tags", "story".to_string()),
+            ("filters", format!("created_at_i >= {}", since)),
+        ]);
+        let filtered = self
+            .fetch_posts(req)
+            .await?
+            .into_iter()
+            .filter(|(_, p)| p.points >= points)
+            .collect();
+        Ok(filtered)
     }
 
-    async fn fetch_posts_from_url(&self, url: &str) -> Result<HashMap<String, Post>> {
-        let resp: AlgoliaResponse = self.client.get(url).send().await?.json().await?;
-
+    async fn fetch_posts(&self, req: RequestBuilder) -> Result<HashMap<String, Post>> {
+        let resp: AlgoliaResponse = req.send().await?.json().await?;
         Ok(resp
             .hits
             .into_iter()
