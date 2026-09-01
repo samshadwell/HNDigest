@@ -4,6 +4,7 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    versioning-strategy: increase
     groups:
       minor-bumps:
         applies-to: version-updates
