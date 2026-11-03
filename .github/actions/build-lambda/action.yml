@@ -16,7 +16,7 @@ runs:
         targets: x86_64-unknown-linux-musl
 
     - name: Rust Cache
-      uses: Swatinem/rust-cache@v2.8.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         # Avoid collisions with non-musl builds
         key: "lambda-musl"
@@ -44,7 +44,7 @@ runs:
         rm bootstrap
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: lambda-zips
         path: |
