@@ -11,7 +11,9 @@ updates:
           - minor
           - patch
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+    - "/"
+    - "/.github/actions/*"
     schedule:
       interval: "monthly"
     groups:
@@ -22,8 +24,7 @@ updates:
   - package-ecosystem: "opentofu"
     directories:
       - "/infrastructure/bootstrap"
-      - "/infrastructure/environments/staging"
-      - "/infrastructure/environments/production"
+      - "/infrastructure/environments/*"
     schedule:
       interval: "monthly"
     groups:
